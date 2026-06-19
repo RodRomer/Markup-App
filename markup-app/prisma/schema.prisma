@@ -9,16 +9,18 @@ generator client {
 }
 
 datasource db {
-  provider = "sqlite"
+  provider = "postgresql"
 }
 
 model Project {
-  id          String    @id @default(cuid())
-  name        String
-  shareToken  String    @unique @default(cuid())
-  status      String    @default("draft") // draft | sent | submitted
-  createdAt   DateTime  @default(now())
-  documents   Document[]
+  id           String    @id @default(cuid())
+  name         String
+  shareToken   String    @unique @default(cuid())
+  status       String    @default("draft") // draft | sent | submitted
+  allowIE      Boolean   @default(true)
+  allowSection Boolean   @default(true)
+  createdAt    DateTime  @default(now())
+  documents    Document[]
 }
 
 model Document {

@@ -11,6 +11,8 @@ export async function POST(request: Request) {
   const kind = formData.get("kind");
   const originalFilename = formData.get("originalFilename");
   const metaRaw = formData.get("meta");
+  const allowIE = formData.get("allowIE") !== "false";
+  const allowSection = formData.get("allowSection") !== "false";
 
   if (
     typeof name !== "string" ||
@@ -28,7 +30,7 @@ export async function POST(request: Request) {
   }
 
   const project = await prisma.project.create({
-    data: { name: name.trim(), status: "sent" },
+    data: { name: name.trim(), status: "sent", allowIE, allowSection },
   });
 
   const document = await prisma.document.create({

@@ -1,7 +1,11 @@
 // Client-only helpers: rasterize PDF pages to PNGs and read image dimensions,
 // all in the browser so the server never needs to parse PDFs itself.
 
-const TARGET_PAGE_WIDTH = 1600;
+// PDF user space is 72 units/inch, so this scale is equivalent to rendering
+// at 200 DPI — a bigger physical sheet rasterizes to proportionally more
+// pixels instead of every page being squeezed to the same target width.
+const RASTER_DPI = 200;
+const PDF_SCALE = RASTER_DPI / 72;
 
 export type RasterizedPage = { blob: Blob; width: number; height: number };
 
@@ -18,9 +22,7 @@ export async function rasterizePdf(file: File): Promise<RasterizedPage[]> {
 
   for (let i = 1; i <= pdf.numPages; i++) {
     const page = await pdf.getPage(i);
-    const baseViewport = page.getViewport({ scale: 1 });
-    const scale = TARGET_PAGE_WIDTH / baseViewport.width;
-    const viewport = page.getViewport({ scale });
+    const viewport = page.getViewport({ scale: PDF_SCALE });
 
     const canvas = document.createElement("canvas");
     canvas.width = Math.round(viewport.width);

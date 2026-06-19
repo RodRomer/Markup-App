@@ -24,14 +24,6 @@ export default async function MarkupPage({
   if (!project) notFound();
 
   return (
-    <div className="mx-auto flex max-w-4xl flex-col gap-6 px-6 py-10">
-      <div>
-        <h1 className="text-2xl font-bold">{project.name}</h1>
-        <p className="mt-1 text-sm text-gray-600">
-          Place IE and Section markers on the plan below, then submit when you&apos;re done.
-        </p>
-      </div>
-      <MarkupEditor token={token} project={toProjectData(project)} />
-    </div>
+    <MarkupEditor token={token} project={toProjectData(project)} />
   );
 }
