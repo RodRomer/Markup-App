@@ -1,7 +1,7 @@
 import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
 import { readFile } from "fs/promises";
 import path from "path";
-import { ieMarkerPolygon, sectionFlagPolygonPoints } from "./markerGeometry";
+import { arrowWedgePoints, DOT_RADIUS_FACTOR, sectionFlagPolygonPoints } from "./markerGeometry";
 import { MARKER_TYPE_INFO } from "./markerTypes";
 import type { MarkerData, ProjectData } from "./types";
 
@@ -85,9 +85,17 @@ export async function generateProjectPdf(project: ProjectData): Promise<Uint8Arr
       });
       for (const endpoint of ["start", "end"] as const) {
         const pts = sectionFlagPolygonPoints(x1, y1, x2, y2, endpoint, m.flipped, flagSize);
-        pdfPage.drawSvgPath(pointsToSvgPath(pts), { x: 0, y: pageHeight, color, opacity });
+        pdfPage.drawSvgPath(pointsToSvgPath(pts), {
+          x: 0,
+          y: pageHeight,
+          color,
+          opacity,
+          borderColor: rgb(0, 0, 0),
+          borderWidth: flagSize * 0.08,
+          borderOpacity: opacity,
+        });
       }
-      const dotRadius = pageData.width * 0.006;
+      const dotRadius = flagSize * DOT_RADIUS_FACTOR;
       for (const [dx, dy] of [[x1, y1], [x2, y2]]) {
         pdfPage.drawEllipse({
           x: dx,
@@ -110,19 +118,21 @@ export async function generateProjectPdf(project: ProjectData): Promise<Uint8Arr
       const size = pageData.width * 0.008;
       const color = hexToRgb(MARKER_TYPE_INFO.IE.color);
       const black = rgb(0, 0, 0);
-      const pts = ieMarkerPolygon(cx, cy, m.directions, size);
-      pdfPage.drawSvgPath(pointsToSvgPath(pts), {
-        x: 0,
-        y: pageHeight,
-        color,
-        borderColor: black,
-        borderWidth: size * 0.08,
-      });
+      for (const angle of m.directions) {
+        const pts = arrowWedgePoints(cx, cy, angle, size);
+        pdfPage.drawSvgPath(pointsToSvgPath(pts), {
+          x: 0,
+          y: pageHeight,
+          color,
+          borderColor: black,
+          borderWidth: size * 0.08,
+        });
+      }
       pdfPage.drawEllipse({
         x: cx,
         y: flipY(cy),
-        xScale: size * 0.5,
-        yScale: size * 0.5,
+        xScale: size * DOT_RADIUS_FACTOR,
+        yScale: size * DOT_RADIUS_FACTOR,
         color,
         borderColor: black,
         borderWidth: size * 0.1,

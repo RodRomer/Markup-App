@@ -1,10 +1,11 @@
 "use client";
 
-import { Fragment, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { MARKER_TYPES, MARKER_TYPE_INFO, type MarkerType } from "@/lib/markerTypes";
 import {
   arrowTipPoint,
-  ieMarkerPolygon,
+  arrowWedgePoints,
+  DOT_RADIUS_FACTOR,
   sectionFlagPolygonPoints,
   snapToCommonAngle,
   toSvgPoints,
@@ -77,23 +78,38 @@ function countByType(markers: MarkerData[]): Record<MarkerType, number> {
 function ToolIcon({ type }: { type: MarkerType }) {
   const color = MARKER_TYPE_INFO[type].color;
   if (type === "IE") {
+    const size = 7;
     return (
       <svg viewBox="0 0 40 40" className="h-6 w-6 shrink-0">
-        <polygon
-          points={toSvgPoints(ieMarkerPolygon(20, 20, [0, 90, 180, 270], 7))}
-          fill={color}
-          stroke="black"
-          strokeWidth={0.6}
-        />
+        {[0, 90, 180, 270].map((angle) => (
+          <polygon
+            key={angle}
+            points={toSvgPoints(arrowWedgePoints(20, 20, angle, size))}
+            fill={color}
+            stroke="black"
+            strokeWidth={0.6}
+          />
+        ))}
+        <circle cx={20} cy={20} r={size * DOT_RADIUS_FACTOR} fill={color} stroke="black" strokeWidth={0.6} />
       </svg>
     );
   }
   if (type === "SECTION") {
+    const size = 5;
     return (
       <svg viewBox="0 0 40 40" className="h-6 w-6 shrink-0">
         <line x1={7} y1={20} x2={33} y2={20} stroke={color} strokeWidth={1.6} />
-        <polygon points={toSvgPoints(sectionFlagPolygonPoints(7, 20, 33, 20, "start", false, 5))} fill={color} />
-        <polygon points={toSvgPoints(sectionFlagPolygonPoints(7, 20, 33, 20, "end", false, 5))} fill={color} />
+        {(["start", "end"] as const).map((endpoint) => (
+          <polygon
+            key={endpoint}
+            points={toSvgPoints(sectionFlagPolygonPoints(7, 20, 33, 20, endpoint, false, size))}
+            fill={color}
+            stroke="black"
+            strokeWidth={0.6}
+          />
+        ))}
+        <circle cx={7} cy={20} r={size * DOT_RADIUS_FACTOR} fill={color} stroke="black" strokeWidth={0.6} />
+        <circle cx={33} cy={20} r={size * DOT_RADIUS_FACTOR} fill={color} stroke="black" strokeWidth={0.6} />
       </svg>
     );
   }
@@ -858,6 +874,8 @@ export default function MarkupEditor({
                     <polygon
                       points={toSvgPoints(sectionFlagPolygonPoints(x1, y1, x2, y2, "start", m.flipped, flagSize))}
                       fill={MARKER_TYPE_INFO.SECTION.color}
+                      stroke="black"
+                      strokeWidth={flagSize * 0.08}
                       style={{ pointerEvents: locked ? "none" : "auto", cursor: "pointer" }}
                       onPointerDown={(e) => e.stopPropagation()}
                       onClick={(e) => {
@@ -868,6 +886,8 @@ export default function MarkupEditor({
                     <polygon
                       points={toSvgPoints(sectionFlagPolygonPoints(x1, y1, x2, y2, "end", m.flipped, flagSize))}
                       fill={MARKER_TYPE_INFO.SECTION.color}
+                      stroke="black"
+                      strokeWidth={flagSize * 0.08}
                       style={{ pointerEvents: locked ? "none" : "auto", cursor: "pointer" }}
                       onPointerDown={(e) => e.stopPropagation()}
                       onClick={(e) => {
@@ -875,6 +895,33 @@ export default function MarkupEditor({
                         handleToggleFlip(m.id);
                       }}
                     />
+                    {[
+                      { x: x1, y: y1, field: "primary" as const },
+                      { x: x2, y: y2, field: "secondary" as const },
+                    ].map(({ x, y, field }) => {
+                      const r = flagSize * DOT_RADIUS_FACTOR;
+                      return (
+                        <g key={field}>
+                          {selectedMarkerId === m.id && (
+                            <circle cx={x} cy={y} r={r * 1.5} fill="none" stroke="black" strokeWidth={r * 0.2} />
+                          )}
+                          <circle
+                            cx={x}
+                            cy={y}
+                            r={r}
+                            fill={MARKER_TYPE_INFO.SECTION.color}
+                            stroke="black"
+                            strokeWidth={r * 0.3}
+                            style={{ pointerEvents: locked ? "none" : "auto", cursor: locked ? undefined : "move" }}
+                            onPointerDown={(e) => handlePointPointerDown(e, m.id, field)}
+                            onPointerMove={handleDragMove}
+                            onPointerUp={handleDragEnd}
+                          >
+                            <title>{m.label}</title>
+                          </circle>
+                        </g>
+                      );
+                    })}
                   </g>
                 );
               }
@@ -882,15 +929,36 @@ export default function MarkupEditor({
                 const cx = m.x * activePage.width;
                 const cy = m.y * activePage.height;
                 const size = activePage.width * 0.008;
+                const dotR = size * DOT_RADIUS_FACTOR;
                 return (
                   <g key={m.id}>
-                    <polygon
-                      points={toSvgPoints(ieMarkerPolygon(cx, cy, m.directions, size))}
+                    {m.directions.map((angle, i) => (
+                      <polygon
+                        key={i}
+                        points={toSvgPoints(arrowWedgePoints(cx, cy, angle, size))}
+                        fill={MARKER_TYPE_INFO.IE.color}
+                        stroke="black"
+                        strokeWidth={size * 0.08}
+                        style={{ pointerEvents: "none" }}
+                      />
+                    ))}
+                    {selectedMarkerId === m.id && (
+                      <circle cx={cx} cy={cy} r={dotR * 1.5} fill="none" stroke="black" strokeWidth={dotR * 0.2} />
+                    )}
+                    <circle
+                      cx={cx}
+                      cy={cy}
+                      r={dotR}
                       fill={MARKER_TYPE_INFO.IE.color}
                       stroke="black"
-                      strokeWidth={size * 0.08}
-                      style={{ pointerEvents: "none" }}
-                    />
+                      strokeWidth={dotR * 0.3}
+                      style={{ pointerEvents: locked ? "none" : "auto", cursor: locked ? undefined : "move" }}
+                      onPointerDown={(e) => handlePointPointerDown(e, m.id, "primary")}
+                      onPointerMove={handleDragMove}
+                      onPointerUp={handleDragEnd}
+                    >
+                      <title>{m.label}</title>
+                    </circle>
                     {!locked &&
                       selectedMarkerId === m.id &&
                       (() => {
@@ -898,7 +966,7 @@ export default function MarkupEditor({
                           cx,
                           cy,
                           m.directions[0] + IE_HANDLE_OFFSET_DEG,
-                          size * 0.88
+                          size * 1.3
                         );
                         const r = Math.max(size * 0.5, 5);
                         return (
@@ -949,9 +1017,11 @@ export default function MarkupEditor({
             )}
           </svg>
 
-          {renderableMarkers.map((m) => (
-            <Fragment key={m.id}>
+          {renderableMarkers
+            .filter((m) => m.type === "NOTE")
+            .map((m) => (
               <div
+                key={m.id}
                 onPointerDown={(e) => handlePointPointerDown(e, m.id, "primary")}
                 onPointerMove={handleDragMove}
                 onPointerUp={handleDragEnd}
@@ -962,33 +1032,13 @@ export default function MarkupEditor({
                   transform: "translate(-50%, -50%)",
                 }}
                 title={m.label}
-                className={`absolute flex touch-none items-center justify-center rounded-full border-2 border-black font-bold text-white shadow ${
-                  m.type === "IE" ? "h-3 w-3 text-[7px]" : m.type === "SECTION" ? "h-4 w-4" : "h-7 w-7 text-xs"
-                } ${locked ? "" : "cursor-move"} ${
-                  selectedMarkerId === m.id ? "ring-2 ring-black ring-offset-1 dark:ring-gray-300" : ""
-                }`}
+                className={`absolute flex h-7 w-7 touch-none items-center justify-center rounded-full border-2 border-black text-xs font-bold text-white shadow ${
+                  locked ? "" : "cursor-move"
+                } ${selectedMarkerId === m.id ? "ring-2 ring-black ring-offset-1 dark:ring-gray-300" : ""}`}
               >
-                {m.type === "NOTE" ? MARKER_TYPE_INFO[m.type].shortLabel : ""}
+                {MARKER_TYPE_INFO[m.type].shortLabel}
               </div>
-              {m.type === "SECTION" && m.x2 != null && m.y2 != null && (
-                <div
-                  onPointerDown={(e) => handlePointPointerDown(e, m.id, "secondary")}
-                  onPointerMove={handleDragMove}
-                  onPointerUp={handleDragEnd}
-                  title={m.label}
-                  style={{
-                    left: `${m.x2 * 100}%`,
-                    top: `${m.y2 * 100}%`,
-                    background: MARKER_TYPE_INFO.SECTION.color,
-                    transform: "translate(-50%, -50%)",
-                  }}
-                  className={`absolute h-4 w-4 touch-none rounded-full border-2 border-black shadow ${
-                    locked ? "" : "cursor-move"
-                  } ${selectedMarkerId === m.id ? "ring-2 ring-black ring-offset-1 dark:ring-gray-300" : ""}`}
-                />
-              )}
-            </Fragment>
-          ))}
+            ))}
         </div>
       </div>
       {zoomWidget}

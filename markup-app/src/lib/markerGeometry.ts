@@ -4,6 +4,11 @@ function toRad(deg: number) {
   return (deg * Math.PI) / 180;
 }
 
+function polarPoint(cx: number, cy: number, angleDeg: number, dist: number): Point {
+  const rad = toRad(angleDeg);
+  return { x: cx + Math.cos(rad) * dist, y: cy + Math.sin(rad) * dist };
+}
+
 export function toSvgPoints(points: Point[]): string {
   return points.map((p) => `${p.x},${p.y}`).join(" ");
 }
@@ -30,71 +35,36 @@ export function snapToCommonAngle(
   return { dx: Math.cos(nearestSnap) * length, dy: Math.sin(nearestSnap) * length };
 }
 
-const ARROW_TIP_DISTANCE = 1.7;
-
-/** Tip of an IE direction arrow, `size` units out from the marker center along `angleDeg`. */
-export function arrowTipPoint(cx: number, cy: number, angleDeg: number, size: number): Point {
-  const rad = toRad(angleDeg);
-  return { x: cx + Math.cos(rad) * (size * ARROW_TIP_DISTANCE), y: cy + Math.sin(rad) * (size * ARROW_TIP_DISTANCE) };
-}
-
-/** Lone triangle pointing outward from (cx,cy) along angleDeg — used only when an IE marker has a single direction. */
-export function arrowPolygonPoints(
-  cx: number,
-  cy: number,
-  angleDeg: number,
-  size: number
-): Point[] {
-  const rad = toRad(angleDeg);
-  const baseDistance = size * 0.5;
-  const tipDistance = size * ARROW_TIP_DISTANCE;
-  const baseHalfWidth = size * 0.5;
-  const perpRad = rad + Math.PI / 2;
-
-  const baseCx = cx + Math.cos(rad) * baseDistance;
-  const baseCy = cy + Math.sin(rad) * baseDistance;
-  const tip = { x: cx + Math.cos(rad) * tipDistance, y: cy + Math.sin(rad) * tipDistance };
-  const corner1 = {
-    x: baseCx + Math.cos(perpRad) * baseHalfWidth,
-    y: baseCy + Math.sin(perpRad) * baseHalfWidth,
-  };
-  const corner2 = {
-    x: baseCx - Math.cos(perpRad) * baseHalfWidth,
-    y: baseCy - Math.sin(perpRad) * baseHalfWidth,
-  };
-
-  return [tip, corner1, corner2];
-}
+/** A marker's dot is drawn at `size * DOT_RADIUS_FACTOR` — arrow geometry is built around this same radius so the two always line up. */
+export const DOT_RADIUS_FACTOR = 0.5;
 
 /**
- * The IE marker's full arrow shape: one solid polygon connecting the tip of
- * every direction directly to the next, so 4 evenly-spaced directions read
- * as a single diamond (not four separate spiky triangles). 1 direction falls
- * back to a lone triangle; 2 directions become a lens/kite between them.
+ * One arrow wedge pointing outward from (cx,cy) along angleDeg. Its two base
+ * corners sit exactly on the dot's own circle (radius `size * DOT_RADIUS_FACTOR`),
+ * 45° to either side of the arrow's angle — the distance from center to tip
+ * is chosen so that line is tangent to the dot there. That 45° offset is what
+ * makes this consistent across direction counts: any two directions that are
+ * 90° apart (every pair this app ever produces, since directions are only
+ * ever added/rotated in 90° steps) share that tangent point exactly, so their
+ * wedges meet with no gap or overlap; directions further apart just leave
+ * that stretch of the dot's circle showing.
  */
-export function ieMarkerPolygon(cx: number, cy: number, directions: number[], size: number): Point[] {
-  if (directions.length === 0) return [];
-  if (directions.length === 1) return arrowPolygonPoints(cx, cy, directions[0], size);
-
-  const tipDistance = size * ARROW_TIP_DISTANCE;
-  const tipAt = (angleDeg: number, dist = tipDistance) => {
-    const rad = toRad(angleDeg);
-    return { x: cx + Math.cos(rad) * dist, y: cy + Math.sin(rad) * dist };
-  };
-
-  if (directions.length === 2) {
-    const [a, b] = directions;
-    const mid = (a + b) / 2;
-    return [tipAt(a), tipAt(mid + 90, size * 0.5), tipAt(b), tipAt(mid - 90, size * 0.5)];
-  }
-
-  const sorted = [...directions].sort(
-    (x, y) => (((x % 360) + 360) % 360) - (((y % 360) + 360) % 360)
-  );
-  return sorted.map((a) => tipAt(a));
+export function arrowWedgePoints(cx: number, cy: number, angleDeg: number, size: number): Point[] {
+  const r = size * DOT_RADIUS_FACTOR;
+  const tipDistance = r * Math.SQRT2;
+  return [
+    polarPoint(cx, cy, angleDeg - 45, r),
+    polarPoint(cx, cy, angleDeg, tipDistance),
+    polarPoint(cx, cy, angleDeg + 45, r),
+  ];
 }
 
-/** Small flag triangle at a section line endpoint, pointing perpendicular to the line. */
+/** Tip of an IE direction arrow, `size` units out from the marker center along `angleDeg` — used to place the rotation handle clear of the arrows. */
+export function arrowTipPoint(cx: number, cy: number, angleDeg: number, size: number): Point {
+  return polarPoint(cx, cy, angleDeg, size);
+}
+
+/** Small flag at a section line endpoint, pointing perpendicular to the line — the same tangent-to-the-dot wedge shape as an IE arrow. */
 export function sectionFlagPolygonPoints(
   x1: number,
   y1: number,
@@ -106,20 +76,7 @@ export function sectionFlagPolygonPoints(
 ): Point[] {
   const lineRad = Math.atan2(y2 - y1, x2 - x1);
   const side = flipped ? -1 : 1;
-  const viewRad = lineRad + (Math.PI / 2) * side;
-
+  const viewDeg = ((lineRad + (Math.PI / 2) * side) * 180) / Math.PI;
   const [x, y] = endpoint === "start" ? [x1, y1] : [x2, y2];
-  // Offset the whole flag out along the view direction so its base clears the
-  // circular endpoint handle instead of sitting underneath it.
-  const baseDistance = size * 0.8;
-  const tipDistance = size * 2.1;
-  const baseHalf = size * 0.45;
-
-  const baseCx = x + Math.cos(viewRad) * baseDistance;
-  const baseCy = y + Math.sin(viewRad) * baseDistance;
-  const tip = { x: x + Math.cos(viewRad) * tipDistance, y: y + Math.sin(viewRad) * tipDistance };
-  const corner1 = { x: baseCx + Math.cos(lineRad) * baseHalf, y: baseCy + Math.sin(lineRad) * baseHalf };
-  const corner2 = { x: baseCx - Math.cos(lineRad) * baseHalf, y: baseCy - Math.sin(lineRad) * baseHalf };
-
-  return [tip, corner1, corner2];
+  return arrowWedgePoints(x, y, viewDeg, size);
 }
