@@ -1,6 +1,31 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { deleteFile } from "@/lib/storage";
+import { toProjectData } from "@/lib/types";
+
+export async function GET(
+  _request: Request,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  const { id } = await params;
+
+  const project = await prisma.project.findUnique({
+    where: { id },
+    include: {
+      documents: {
+        include: {
+          pages: { include: { markers: { include: { directions: { orderBy: { order: "asc" } } } } } },
+        },
+      },
+    },
+  });
+
+  if (!project) {
+    return NextResponse.json({ error: "Project not found" }, { status: 404 });
+  }
+
+  return NextResponse.json({ ...toProjectData(project), createdAt: project.createdAt.toISOString() });
+}
 
 export async function PATCH(
   request: Request,

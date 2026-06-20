@@ -11,6 +11,7 @@ import {
   toSvgPoints,
 } from "@/lib/markerGeometry";
 import type { MarkerData, ProjectData } from "@/lib/types";
+import DownloadPdfButton from "./DownloadPdfButton";
 
 type DragTarget =
   | { kind: "point"; markerId: string; field: "primary" | "secondary" }
@@ -73,49 +74,65 @@ function countByType(markers: MarkerData[]): Record<MarkerType, number> {
 // Miniature rendering of the actual on-canvas symbol, used in the tool
 // palette so picking a tool shows what it looks like rather than an
 // abstract colored dot.
-function ToolIcon({ type }: { type: MarkerType }) {
+//
+// arrowWedgePoints' tip distance is wedgeSize * DOT_RADIUS_FACTOR * sqrt(2) *
+// 1.3 ≈ wedgeSize * 0.92, and its base corners sit on a circle of radius
+// wedgeSize * DOT_RADIUS_FACTOR — the dot MUST be drawn at that same radius
+// or the wedges look detached from it. So every icon below uses the same
+// ICON_WEDGE_SIZE (giving the same dot radius and the same tip reach, since
+// they share the 40-unit-tall viewBox), and the plain Note dot is just set
+// to that same resulting radius directly.
+const ICON_WEDGE_SIZE = 20;
+const ICON_DOT_RADIUS = ICON_WEDGE_SIZE * DOT_RADIUS_FACTOR;
+
+function ToolIcon({ type, size = 24 }: { type: MarkerType; size?: number }) {
   const color = MARKER_TYPE_INFO[type].color;
+  const boxStyle = { width: size, height: size, flexShrink: 0 };
   if (type === "IE") {
-    const size = 7;
+    const wedgeSize = ICON_WEDGE_SIZE;
     return (
-      <svg viewBox="0 0 40 40" className="h-6 w-6 shrink-0">
+      <svg viewBox="0 0 40 40" style={boxStyle}>
         {[0, 90, 180, 270].map((angle) => (
           <polygon
             key={angle}
-            points={toSvgPoints(arrowWedgePoints(20, 20, angle, size))}
+            points={toSvgPoints(arrowWedgePoints(20, 20, angle, wedgeSize))}
             fill={color}
             stroke="black"
-            strokeWidth={size * 0.06}
+            strokeWidth={wedgeSize * 0.06}
             strokeLinejoin="round"
           />
         ))}
-        <circle cx={20} cy={20} r={size * DOT_RADIUS_FACTOR} fill={color} stroke="black" strokeWidth={size * 0.06} />
+        <circle cx={20} cy={20} r={ICON_DOT_RADIUS} fill={color} stroke="black" strokeWidth={wedgeSize * 0.06} />
       </svg>
     );
   }
   if (type === "SECTION") {
-    const size = 5;
+    // Wider 2:1 viewBox (instead of square) so the line actually reads as a
+    // line rather than being squeezed into a tiny square icon. Same
+    // px-per-unit scale as the 40-tall icons (size/40), just twice as wide —
+    // and the same wedgeSize as IE so the flags scale identically to the arrows.
+    const wedgeSize = ICON_WEDGE_SIZE;
     return (
-      <svg viewBox="0 0 40 40" className="h-6 w-6 shrink-0">
-        <line x1={7} y1={20} x2={33} y2={20} stroke={color} strokeWidth={1.6} />
+      <svg viewBox="0 0 80 40" style={{ width: size * 2, height: size, flexShrink: 0 }}>
+        <line x1={10} y1={20} x2={70} y2={20} stroke={color} strokeWidth={2.4} />
         {(["start", "end"] as const).map((endpoint) => (
           <polygon
             key={endpoint}
-            points={toSvgPoints(sectionFlagPolygonPoints(7, 20, 33, 20, endpoint, false, size))}
+            points={toSvgPoints(sectionFlagPolygonPoints(10, 20, 70, 20, endpoint, false, wedgeSize))}
             fill={color}
             stroke="black"
-            strokeWidth={size * 0.06}
+            strokeWidth={wedgeSize * 0.06}
             strokeLinejoin="round"
           />
         ))}
-        <circle cx={7} cy={20} r={size * DOT_RADIUS_FACTOR} fill={color} stroke="black" strokeWidth={size * 0.06} />
-        <circle cx={33} cy={20} r={size * DOT_RADIUS_FACTOR} fill={color} stroke="black" strokeWidth={size * 0.06} />
+        <circle cx={10} cy={20} r={ICON_DOT_RADIUS} fill={color} stroke="black" strokeWidth={wedgeSize * 0.06} />
+        <circle cx={70} cy={20} r={ICON_DOT_RADIUS} fill={color} stroke="black" strokeWidth={wedgeSize * 0.06} />
       </svg>
     );
   }
   return (
-    <svg viewBox="0 0 40 40" className="h-6 w-6 shrink-0">
-      <circle cx={20} cy={20} r={7} fill={color} stroke="black" strokeWidth={0.4} />
+    <svg viewBox="0 0 40 40" style={boxStyle}>
+      <circle cx={20} cy={20} r={ICON_DOT_RADIUS} fill={color} stroke="black" strokeWidth={0.6} />
     </svg>
   );
 }
@@ -124,11 +141,14 @@ export default function MarkupEditor({
   token,
   project,
   readOnly = false,
+  embedded = false,
   headerExtra,
 }: {
   token: string;
   project: ProjectData;
   readOnly?: boolean;
+  /** True when mounted inside the staff master-detail shell — fills its container instead of taking over the whole viewport. */
+  embedded?: boolean;
   /** Staff-only header content (back link, share URL, project actions) shown at the top of the ribbon. */
   headerExtra?: React.ReactNode;
 }) {
@@ -142,7 +162,9 @@ export default function MarkupEditor({
   const [zoom, setZoom] = useState(1);
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const [baseWidth, setBaseWidth] = useState(DEFAULT_BASE_WIDTH);
-  const [instructionsCollapsed, setInstructionsCollapsed] = useState(false);
+  const [helpOpen, setHelpOpen] = useState(true);
+  const [iePreset, setIePreset] = useState<number[]>([0, 90, 180, 270]);
+  const [deletedToast, setDeletedToast] = useState<MarkerData | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [resetting, setResetting] = useState<"page" | "project" | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -150,6 +172,7 @@ export default function MarkupEditor({
   const outerRef = useRef<HTMLDivElement>(null);
   const ribbonRef = useRef<HTMLDivElement>(null);
   const zoomWidgetRef = useRef<HTMLDivElement>(null);
+  const selectedMarkerPanelRef = useRef<HTMLDivElement>(null);
   // Mirrors of zoom/pan state for synchronous reads inside the wheel handler.
   // setZoom/setPan must never be nested (one's updater calling the other) —
   // React's StrictMode dev-mode double-invokes updater functions to catch
@@ -160,19 +183,16 @@ export default function MarkupEditor({
   zoomRef.current = zoom;
   panRef.current = pan;
   const panDragRef = useRef<PanDragState | null>(null);
+  const deletedToastTimerRef = useRef<number | null>(null);
+  // Two-finger pinch-to-zoom: tracks every active pointer's last known
+  // position so we can compute the distance between exactly two of them.
+  const activePointersRef = useRef<Map<number, { x: number; y: number }>>(new Map());
+  const pinchRef = useRef<{ pointerIds: [number, number]; lastDist: number } | null>(null);
 
   const locked = readOnly || status === "submitted";
   const activePage = pages.find((p) => p.id === activePageId) ?? pages[0];
   const selectedMarker = selectedMarkerId ? findMarker(selectedMarkerId) ?? null : null;
 
-  // Section lines apply to every page of the document (they're the same cut
-  // line viewed from each story), so the page panel shows the project-wide
-  // section count rather than just this page's own — IE/Note stay per-page.
-  const currentPageCounts = useMemo(() => {
-    const counts = countByType(activePage?.markers ?? []);
-    counts.SECTION = countByType(pages.flatMap((p) => p.markers)).SECTION;
-    return counts;
-  }, [activePage, pages]);
   const overallCounts = useMemo(
     () => countByType(pages.flatMap((p) => p.markers)),
     [pages]
@@ -240,6 +260,7 @@ export default function MarkupEditor({
       if (outerRef.current?.contains(target)) return;
       if (ribbonRef.current?.contains(target)) return;
       if (zoomWidgetRef.current?.contains(target)) return;
+      if (selectedMarkerPanelRef.current?.contains(target)) return;
       setSelectedMarkerId(null);
     }
     window.addEventListener("pointerdown", onPointerDown);
@@ -350,11 +371,32 @@ export default function MarkupEditor({
 
   function handleCanvasPointerDown(e: React.PointerEvent) {
     if (!activePage) return;
+    activePointersRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    // Best-effort: capture keeps events coming if a finger slides off the
+    // element, but a second simultaneous pointer can fail to capture on some
+    // browsers — that must not abort the pinch tracking below.
+    try {
+      e.currentTarget.setPointerCapture(e.pointerId);
+    } catch {
+      // ignore
+    }
+
+    if (activePointersRef.current.size === 2) {
+      // A second finger landed — cancel any single-pointer pan/draft and
+      // switch into pinch-zoom mode for as long as both fingers are down.
+      panDragRef.current = null;
+      setDraft(null);
+      const ids = Array.from(activePointersRef.current.keys()) as [number, number];
+      const [p1, p2] = ids.map((id) => activePointersRef.current.get(id)!);
+      pinchRef.current = { pointerIds: ids, lastDist: Math.hypot(p1.x - p2.x, p1.y - p2.y) };
+      return;
+    }
+    if (activePointersRef.current.size > 2) return;
+
     if (!locked && selectedTool) {
       handleStartDraft(e);
       return;
     }
-    e.currentTarget.setPointerCapture(e.pointerId);
     panDragRef.current = {
       pointerId: e.pointerId,
       startX: e.clientX,
@@ -366,6 +408,33 @@ export default function MarkupEditor({
   }
 
   function handleCanvasPointerMove(e: React.PointerEvent) {
+    if (activePointersRef.current.has(e.pointerId)) {
+      activePointersRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    }
+
+    const pinch = pinchRef.current;
+    if (pinch) {
+      const p1 = activePointersRef.current.get(pinch.pointerIds[0]);
+      const p2 = activePointersRef.current.get(pinch.pointerIds[1]);
+      const rect = outerRef.current?.getBoundingClientRect();
+      if (p1 && p2 && rect && pinch.lastDist > 0) {
+        const dist = Math.hypot(p1.x - p2.x, p1.y - p2.y);
+        const prevZoom = zoomRef.current;
+        const newZoom = clamp(prevZoom * (dist / pinch.lastDist), ZOOM_MIN, ZOOM_MAX);
+        const ratio = newZoom / prevZoom;
+        const cx = (p1.x + p2.x) / 2 - rect.left;
+        const cy = (p1.y + p2.y) / 2 - rect.top;
+        const prevPan = panRef.current;
+        const newPan = { x: cx - (cx - prevPan.x) * ratio, y: cy - (cy - prevPan.y) * ratio };
+        zoomRef.current = newZoom;
+        panRef.current = newPan;
+        setZoom(newZoom);
+        setPan(newPan);
+        pinch.lastDist = dist;
+      }
+      return;
+    }
+
     if (draft) {
       handleDraftMove(e);
       return;
@@ -380,6 +449,11 @@ export default function MarkupEditor({
   }
 
   function handleCanvasPointerUp(e: React.PointerEvent) {
+    activePointersRef.current.delete(e.pointerId);
+    if (pinchRef.current && pinchRef.current.pointerIds.includes(e.pointerId)) {
+      pinchRef.current = null;
+      return;
+    }
     if (draft) {
       handleDraftEnd(e);
       return;
@@ -406,6 +480,43 @@ export default function MarkupEditor({
             x: cx - (cx - prevPan.x) * ratio,
             y: cy - (cy - prevPan.y) * ratio,
           };
+    zoomRef.current = newZoom;
+    panRef.current = newPan;
+    setZoom(newZoom);
+    setPan(newPan);
+  }
+
+  // Zooms/pans to fit just the markers on the active page, rather than the
+  // whole sheet — useful once markers are clustered in one corner of a large plan.
+  function fitToMarkers() {
+    const viewport = outerRef.current;
+    if (!viewport || !activePage) return;
+    const points: { x: number; y: number }[] = [];
+    for (const m of activePage.markers) {
+      points.push({ x: m.x, y: m.y });
+      if (m.x2 != null && m.y2 != null) points.push({ x: m.x2, y: m.y2 });
+    }
+    if (points.length === 0) return;
+    const pad = 0.05;
+    const minX = clamp(Math.min(...points.map((p) => p.x)) - pad, 0, 1);
+    const maxX = clamp(Math.max(...points.map((p) => p.x)) + pad, 0, 1);
+    const minY = clamp(Math.min(...points.map((p) => p.y)) - pad, 0, 1);
+    const maxY = clamp(Math.max(...points.map((p) => p.y)) + pad, 0, 1);
+    const aspect = activePage.height / activePage.width;
+    const boxWidthPx = (maxX - minX) * baseWidth;
+    const boxHeightPx = (maxY - minY) * baseWidth * aspect;
+    if (boxWidthPx <= 0 || boxHeightPx <= 0) return;
+    const newZoom = clamp(
+      Math.min(viewport.clientWidth / boxWidthPx, viewport.clientHeight / boxHeightPx),
+      ZOOM_MIN,
+      ZOOM_MAX
+    );
+    const centerXPx = ((minX + maxX) / 2) * baseWidth;
+    const centerYPx = ((minY + maxY) / 2) * baseWidth * aspect;
+    const newPan = {
+      x: viewport.clientWidth / 2 - centerXPx * newZoom,
+      y: viewport.clientHeight / 2 - centerYPx * newZoom,
+    };
     zoomRef.current = newZoom;
     panRef.current = newPan;
     setZoom(newZoom);
@@ -469,7 +580,7 @@ export default function MarkupEditor({
         x: final.start.x,
         y: final.start.y,
         label: nextLabel("IE"),
-        directions: [0, 90, 180, 270],
+        directions: iePreset,
       };
     } else {
       if (dist < MIN_SECTION_DRAG_PX) return;
@@ -597,39 +708,40 @@ export default function MarkupEditor({
   // --- Selected-marker panel actions ---
 
   async function handleDeleteMarker(markerId: string) {
+    const marker = findMarker(markerId);
     try {
       const res = await fetch(`/api/markup/${token}/markers/${markerId}`, { method: "DELETE" });
       if (!res.ok) throw new Error((await res.json()).error ?? "Failed to delete marker");
       setPages((prev) => prev.map((p) => ({ ...p, markers: p.markers.filter((m) => m.id !== markerId) })));
       setSelectedMarkerId(null);
+      if (marker) {
+        setDeletedToast(marker);
+        if (deletedToastTimerRef.current !== null) window.clearTimeout(deletedToastTimerRef.current);
+        deletedToastTimerRef.current = window.setTimeout(() => setDeletedToast(null), 6000);
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to delete marker");
     }
   }
 
-  async function handleDuplicateMarker(markerId: string) {
-    const marker = findMarker(markerId);
-    const ownerPage = pages.find((p) => p.markers.some((mk) => mk.id === markerId));
-    if (!marker || !ownerPage) return;
-
-    const OFFSET = 0.02;
-    const offset = (v: number) => Math.min(1, v + OFFSET);
-    const label = `${MARKER_TYPE_INFO[marker.type].label} ${
-      ownerPage.markers.filter((m) => m.type === marker.type).length + 1
-    }`;
+  async function handleUndoDelete() {
+    const marker = deletedToast;
+    if (!marker) return;
+    setDeletedToast(null);
+    if (deletedToastTimerRef.current !== null) window.clearTimeout(deletedToastTimerRef.current);
 
     const body: Record<string, unknown> = {
-      pageId: ownerPage.id,
+      pageId: marker.pageId,
       type: marker.type,
-      x: offset(marker.x),
-      y: offset(marker.y),
-      label,
+      x: marker.x,
+      y: marker.y,
+      label: marker.label,
       note: marker.note ?? undefined,
     };
     if (marker.type === "IE") body.directions = marker.directions;
     if (marker.type === "SECTION") {
-      body.x2 = offset(marker.x2 ?? marker.x);
-      body.y2 = offset(marker.y2 ?? marker.y);
+      body.x2 = marker.x2;
+      body.y2 = marker.y2;
       body.flipped = marker.flipped;
     }
 
@@ -639,12 +751,12 @@ export default function MarkupEditor({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
       });
-      if (!res.ok) throw new Error((await res.json()).error ?? "Failed to duplicate marker");
+      if (!res.ok) throw new Error((await res.json()).error ?? "Failed to restore marker");
       const newMarker: MarkerData = await res.json();
-      updatePageMarkers(ownerPage.id, (markers) => [...markers, newMarker]);
+      updatePageMarkers(marker.pageId, (markers) => [...markers, newMarker]);
       setSelectedMarkerId(newMarker.id);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to duplicate marker");
+      setError(err instanceof Error ? err.message : "Failed to restore marker");
     }
   }
 
@@ -753,18 +865,64 @@ export default function MarkupEditor({
     selectedTool === "NOTE"
       ? "Click the document to place a Note"
       : selectedTool === "IE"
-      ? "Click to place an IE Location — it places with all 4 directions; select it afterward to remove the ones you don't need, or drag any arrow to rotate the whole group"
+      ? "Click to place an IE marker with the arrow pattern picked above — select it afterward to add/remove arrows, or drag any arrow to rotate the whole group"
       : selectedTool
       ? `Click and drag on the document to aim the ${MARKER_TYPE_INFO[selectedTool].label}`
       : null;
 
+  // Five starting arrow patterns for a new IE marker; the exact omitted
+  // side(s) don't matter since the whole group is rotatable after placement.
+  const IE_PRESETS: { directions: number[]; label: string }[] = [
+    { directions: [0], label: "1 side" },
+    { directions: [0, 180], label: "2 sides, opposite" },
+    { directions: [0, 90], label: "2 sides, diagonal" },
+    { directions: [0, 90, 180], label: "3 sides" },
+    { directions: [0, 90, 180, 270], label: "4 sides" },
+  ];
+
+  function IePresetIcon({ directions, size = 20 }: { directions: number[]; size?: number }) {
+    const wedgeSize = ICON_WEDGE_SIZE;
+    return (
+      <svg viewBox="0 0 40 40" style={{ width: size, height: size, flexShrink: 0 }}>
+        {directions.map((angle) => (
+          <polygon
+            key={angle}
+            points={toSvgPoints(arrowWedgePoints(20, 20, angle, wedgeSize))}
+            fill={MARKER_TYPE_INFO.IE.color}
+            stroke="black"
+            strokeWidth={wedgeSize * 0.06}
+            strokeLinejoin="round"
+          />
+        ))}
+        <circle cx={20} cy={20} r={ICON_DOT_RADIUS} fill={MARKER_TYPE_INFO.IE.color} stroke="black" strokeWidth={wedgeSize * 0.06} />
+      </svg>
+    );
+  }
+
+  function isIePresetActive(directions: number[]) {
+    return selectedTool === "IE" && iePreset.join(",") === directions.join(",");
+  }
+
+  function selectIePreset(directions: number[]) {
+    if (isIePresetActive(directions)) {
+      setSelectedTool(null);
+    } else {
+      setIePreset(directions);
+      setSelectedTool("IE");
+    }
+  }
+
+  function toggleTool(type: MarkerType) {
+    setSelectedTool(selectedTool === type ? null : type);
+  }
+
   const dpadButtonClass =
-    "flex h-6 w-6 items-center justify-center rounded text-gray-700 hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-700";
+    "flex h-6 w-6 items-center justify-center rounded text-gray-700 hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-800";
 
   const zoomWidget = (
     <div
       ref={zoomWidgetRef}
-      className="absolute top-3 right-3 flex flex-col items-center gap-1 rounded-md border border-gray-200 bg-white/90 p-1 text-sm shadow-md backdrop-blur-sm dark:border-gray-600 dark:bg-gray-800/90"
+      className="absolute top-3 right-3 flex flex-col items-center gap-1 rounded-md border border-gray-200 bg-white/90 p-1 text-sm shadow-md backdrop-blur-sm dark:border-gray-700 dark:bg-black/90"
     >
       <div className="grid grid-cols-3 gap-0.5" title="Hold to pan">
         <span />
@@ -813,12 +971,12 @@ export default function MarkupEditor({
         </button>
         <span />
       </div>
-      <div className="h-px w-full bg-gray-200 dark:bg-gray-600" />
+      <div className="h-px w-full bg-gray-200 dark:bg-gray-700" />
       <div className="flex items-center gap-1">
         <button
           type="button"
           onClick={() => zoomByButton(-ZOOM_STEP)}
-          className="flex h-7 w-7 items-center justify-center rounded-md font-semibold text-gray-700 hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-700"
+          className="flex h-7 w-7 items-center justify-center rounded-md font-semibold text-gray-700 hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-800"
           title="Zoom out"
         >
           −
@@ -829,7 +987,7 @@ export default function MarkupEditor({
             setZoom(1);
             setPan(centerPan(1));
           }}
-          className="min-w-[3.5rem] rounded-md px-2 py-1 text-xs text-gray-700 hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-700"
+          className="min-w-[3.5rem] rounded-md px-2 py-1 text-xs text-gray-700 hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-800"
           title="Fit to screen"
         >
           {Math.round(zoom * 100)}%
@@ -837,12 +995,21 @@ export default function MarkupEditor({
         <button
           type="button"
           onClick={() => zoomByButton(ZOOM_STEP)}
-          className="flex h-7 w-7 items-center justify-center rounded-md font-semibold text-gray-700 hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-700"
+          className="flex h-7 w-7 items-center justify-center rounded-md font-semibold text-gray-700 hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-800"
           title="Zoom in"
         >
           +
         </button>
       </div>
+      <button
+        type="button"
+        onClick={fitToMarkers}
+        disabled={(activePage?.markers.length ?? 0) === 0}
+        className="w-full rounded-md px-2 py-1 text-xs text-gray-700 hover:bg-gray-100 disabled:opacity-40 dark:text-gray-200 dark:hover:bg-gray-800"
+        title="Zoom to fit just this page's markers"
+      >
+        Fit markers
+      </button>
     </div>
   );
 
@@ -864,7 +1031,7 @@ export default function MarkupEditor({
         onPointerDown={handleCanvasPointerDown}
         onPointerMove={handleCanvasPointerMove}
         onPointerUp={handleCanvasPointerUp}
-        className={`absolute inset-0 touch-none overflow-hidden rounded-t-lg border border-gray-200 bg-gray-50 dark:border-gray-700 dark:bg-gray-800 ${
+        className={`absolute inset-0 touch-none overflow-hidden rounded-t-lg border border-gray-200 bg-gray-50 dark:border-gray-800 dark:bg-gray-900 ${
           selectedTool ? "cursor-crosshair" : "cursor-grab"
         }`}
       >
@@ -1122,126 +1289,162 @@ export default function MarkupEditor({
   );
 
   const errorBanner = error && (
-    <div className="rounded-md border border-gray-300 bg-gray-50 px-3 py-2 text-sm text-red-700 dark:border-gray-700 dark:bg-gray-800 dark:text-red-400">
+    <div className="rounded-md border border-gray-300 bg-gray-50 px-3 py-2 text-sm text-red-700 dark:border-gray-800 dark:bg-gray-900 dark:text-red-500">
       {error}
     </div>
   );
 
   const lockedBanner = locked && (
-    <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-gray-300 bg-gray-50 px-3 py-2 text-sm text-gray-600 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300">
+    <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-gray-300 bg-gray-50 px-3 py-2 text-sm text-gray-600 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-300">
       <span>
         {status === "submitted"
           ? "This markup has been submitted and is now read-only."
           : "This markup is read-only."}
       </span>
       {!readOnly && status === "submitted" && (
-        <a
-          href={`/api/markup/${token}/pdf`}
-          className="rounded-md border border-gray-300 bg-white px-2 py-1 text-xs font-medium text-green-700 hover:bg-gray-50 dark:border-gray-600 dark:bg-gray-800 dark:text-green-400 dark:hover:bg-gray-700"
-        >
-          Download PDF
-        </a>
+        <DownloadPdfButton href={`/api/markup/${token}/pdf`} filenameFallback={`${project.name}.pdf`} />
       )}
     </div>
   );
 
-  const instructionsPanel = !readOnly && !locked && (
-    instructionsCollapsed ? (
-      <button
-        type="button"
-        onClick={() => setInstructionsCollapsed(false)}
-        className="flex w-fit items-center gap-1.5 rounded-full border border-blue-200 bg-blue-50 px-3 py-1.5 text-sm font-medium text-blue-900 hover:bg-blue-100 dark:border-blue-800 dark:bg-blue-950 dark:text-blue-200 dark:hover:bg-blue-900"
-      >
-        ⓘ How to mark up this plan ⌄
-      </button>
-    ) : (
-      <div className="rounded-md border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-900 dark:border-blue-800 dark:bg-blue-950 dark:text-blue-200">
-        <div className="mb-1 flex items-center justify-between">
-          <p className="font-semibold">How to mark up this plan</p>
-          <button
-            type="button"
-            onClick={() => setInstructionsCollapsed(true)}
-            title="Minimize instructions"
-            className="rounded-md px-1.5 py-0.5 text-blue-700 hover:bg-blue-100 dark:text-blue-300 dark:hover:bg-blue-900"
-          >
-            ⌃
-          </button>
+  const helpBubble = !readOnly && !locked && (
+    <div className="absolute bottom-3 left-3 max-w-xs">
+      {helpOpen ? (
+        <div className="rounded-lg border border-blue-200 bg-blue-50 p-3 text-sm text-blue-900 shadow-md dark:border-blue-800 dark:bg-blue-950 dark:text-blue-200">
+          <div className="mb-1 flex items-center justify-between gap-2">
+            <p className="font-semibold">How to mark up this plan</p>
+            <button
+              type="button"
+              onClick={() => setHelpOpen(false)}
+              title="Minimize"
+              className="rounded-md px-1.5 py-0.5 text-blue-700 hover:bg-blue-100 dark:text-blue-300 dark:hover:bg-blue-900"
+            >
+              ✕
+            </button>
+          </div>
+          <ol className="list-decimal space-y-1 pl-4">
+            <li>Pick a marker type below: IE, Section, or Note.</li>
+            <li>
+              For IE or Note, click anywhere on the plan to place it. For Section, click and
+              drag to draw the cut line.
+            </li>
+            <li>
+              Pick a starting arrow pattern for IE, then click to place — select it afterward
+              to add/remove arrows, or drag any arrow to rotate the whole group.
+            </li>
+            <li>
+              For a Section line, drag the line itself to move it, or use its flip handle to
+              flip which way it&apos;s looking.
+            </li>
+            <li>Scroll, pinch, or drag to zoom/pan around.</li>
+            <li>
+              When everything looks right, click &quot;Submit&quot; at the bottom — you
+              won&apos;t be able to make changes after that, so double-check first.
+            </li>
+          </ol>
+          <p className="mt-2 mb-1 font-semibold">What&apos;s IE vs Section?</p>
+          <p className="mb-1">
+            <span className="font-medium">IE</span> marks a viewpoint on the plan — its arrows
+            show which wall/direction(s) need an interior-elevation drawing.
+          </p>
+          <p>
+            <span className="font-medium">Section</span> is a cut line through the plan
+            showing where a vertical section is taken — its flagged ends show which way that
+            view looks.
+          </p>
         </div>
-        <ol className="list-decimal space-y-1 pl-4">
-          <li>Pick a marker type below: IE Location, Section Location, or Note.</li>
-          <li>
-            For IE Location or Note, click anywhere on the plan to place it. For Section
-            Location, click and drag to draw the cut line.
-          </li>
-          <li>
-            An IE marker starts with 4 arrows pointing every direction — click it, then drag
-            any arrow to rotate the whole group together, or remove the ones you don&apos;t
-            need. For an unusual layout, place a second IE marker instead.
-          </li>
-          <li>
-            For a Section line, drag the line itself to move it, or click one of its end flags
-            (or use &quot;Flip view direction&quot; below the plan) to flip which way it&apos;s
-            looking.
-          </li>
-          <li>Scroll over the plan to zoom, or drag to pan around.</li>
-          <li>
-            When everything looks right, click &quot;Submit markup&quot; at the bottom — you
-            won&apos;t be able to make changes after that, so double-check first.
-          </li>
-        </ol>
-      </div>
-    )
+      ) : (
+        <button
+          type="button"
+          onClick={() => setHelpOpen(true)}
+          aria-label="Help"
+          className="flex h-9 w-9 items-center justify-center rounded-full border border-blue-200 bg-blue-50 text-lg font-semibold text-blue-900 shadow-md hover:bg-blue-100 dark:border-blue-800 dark:bg-blue-950 dark:text-blue-200 dark:hover:bg-blue-900"
+        >
+          ?
+        </button>
+      )}
+    </div>
   );
 
   const allowedMarkerTypes = MARKER_TYPES.filter(
     (type) => type !== "IE" || project.allowIE
   ).filter((type) => type !== "SECTION" || project.allowSection);
 
+  // Flat, icon-only options — no heavy bounding box, just a subtle tint to
+  // show what's selected or hovered (matches a CAD-style "Design" palette).
+  const tileClass = (active: boolean) =>
+    `flex items-center justify-center rounded-md p-0.5 transition-colors ${
+      active ? "bg-gray-200 dark:bg-gray-800" : "hover:bg-gray-100 dark:hover:bg-gray-900"
+    }`;
+
+  const sectionHeadingClass =
+    "text-xs font-semibold tracking-wide text-gray-700 uppercase dark:text-gray-300";
+
   const toolPalette = !locked && (
     <div className="flex flex-col gap-2">
-      {allowedMarkerTypes.map((type) => (
+      {allowedMarkerTypes.includes("IE") && (
+        <div className="flex flex-col gap-1">
+          <span className={sectionHeadingClass}>Interior Elevations</span>
+          <div className="grid grid-cols-3 gap-0.5">
+            {IE_PRESETS.map((preset) => (
+              <button
+                key={preset.label}
+                type="button"
+                title={preset.label}
+                onClick={() => selectIePreset(preset.directions)}
+                className={tileClass(isIePresetActive(preset.directions))}
+              >
+                <IePresetIcon directions={preset.directions} size={64} />
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {allowedMarkerTypes.includes("SECTION") && (
+        <div className="flex flex-col gap-1">
+          <span className={sectionHeadingClass}>Sections</span>
+          <button
+            type="button"
+            title="Section"
+            onClick={() => toggleTool("SECTION")}
+            className={`${tileClass(selectedTool === "SECTION")} w-full`}
+          >
+            <ToolIcon type="SECTION" size={64} />
+          </button>
+        </div>
+      )}
+
+      <div className="flex flex-col gap-1">
+        <span className={sectionHeadingClass}>Notes</span>
         <button
-          key={type}
-          onClick={() => setSelectedTool(selectedTool === type ? null : type)}
-          className={`flex items-center gap-2 rounded-md border-2 px-3 py-1.5 text-sm font-medium ${
-            selectedTool === type
-              ? "border-gray-900 bg-gray-900 text-white dark:border-gray-300 dark:bg-gray-700 dark:text-gray-100"
-              : "border-gray-200 bg-white text-gray-800 hover:border-gray-300 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100"
-          }`}
+          type="button"
+          title="Note"
+          onClick={() => toggleTool("NOTE")}
+          className={`${tileClass(selectedTool === "NOTE")} w-fit`}
         >
-          <ToolIcon type={type} />
-          {MARKER_TYPE_INFO[type].label}
+          <ToolIcon type="NOTE" size={64} />
         </button>
-      ))}
+      </div>
+
       {placementHint && <p className="text-sm text-gray-700 dark:text-gray-300">{placementHint}</p>}
     </div>
   );
 
-  const countsPanel = (
-    <div className="flex flex-col gap-1 text-sm text-gray-700 dark:text-gray-300">
-      <span className="font-medium text-gray-800 dark:text-gray-200">Page totals:</span>
-      {MARKER_TYPES.map((type) => (
-        <span key={type}>
-          {COUNT_LABEL[type]}: {currentPageCounts[type]}
-        </span>
-      ))}
-    </div>
-  );
-
+  // Floats over the canvas (top-left, mirroring the zoom widget at top-right)
+  // instead of living in the ribbon — settings for a marker you just clicked
+  // on the canvas belong near that marker, not back in the tool palette.
   const selectedMarkerPanel = selectedMarker && !locked && (
-    <div className="rounded-md border bg-white p-3 text-sm shadow-sm dark:border-gray-700 dark:bg-gray-800">
+    <div
+      ref={selectedMarkerPanelRef}
+      className="absolute top-3 left-3 max-w-xs rounded-md border border-gray-200 bg-white/95 p-3 text-sm shadow-md backdrop-blur-sm dark:border-gray-700 dark:bg-black/95"
+    >
       <div className="mb-2 flex items-center justify-between gap-2">
         <span className="font-semibold text-gray-900 dark:text-gray-100">{selectedMarker.label}</span>
         <div className="flex gap-1.5">
           <button
-            onClick={() => handleDuplicateMarker(selectedMarker.id)}
-            className="rounded-md border border-gray-300 bg-white px-2 py-1 text-xs font-medium hover:bg-gray-50 dark:border-gray-600 dark:bg-gray-800 dark:hover:bg-gray-700"
-          >
-            Duplicate
-          </button>
-          <button
             onClick={() => handleDeleteMarker(selectedMarker.id)}
-            className="rounded-md border border-gray-300 bg-white px-2 py-1 text-xs font-medium text-red-700 hover:bg-gray-50 dark:border-gray-600 dark:bg-gray-800 dark:text-red-400 dark:hover:bg-gray-700"
+            className="rounded-md border border-gray-300 bg-white px-2 py-1 text-xs font-medium text-red-700 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-900 dark:text-red-500 dark:hover:bg-gray-800"
           >
             Delete marker
           </button>
@@ -1259,7 +1462,7 @@ export default function MarkupEditor({
               onClick={() => handleRemoveDirection(selectedMarker.id)}
               disabled={selectedMarker.directions.length <= 1}
               aria-label="Remove an arrow"
-              className="flex h-6 w-6 items-center justify-center rounded-md border text-sm font-medium hover:bg-gray-50 disabled:opacity-40 dark:border-gray-600 dark:hover:bg-gray-700"
+              className="flex h-6 w-6 items-center justify-center rounded-md border text-sm font-medium hover:bg-gray-50 disabled:opacity-40 dark:border-gray-700 dark:hover:bg-gray-800"
             >
               −
             </button>
@@ -1270,7 +1473,7 @@ export default function MarkupEditor({
               onClick={() => handleAddDirection(selectedMarker.id)}
               disabled={selectedMarker.directions.length >= 4}
               aria-label="Add an arrow"
-              className="flex h-6 w-6 items-center justify-center rounded-md border text-sm font-medium hover:bg-gray-50 disabled:opacity-40 dark:border-gray-600 dark:hover:bg-gray-700"
+              className="flex h-6 w-6 items-center justify-center rounded-md border text-sm font-medium hover:bg-gray-50 disabled:opacity-40 dark:border-gray-700 dark:hover:bg-gray-800"
             >
               +
             </button>
@@ -1283,21 +1486,23 @@ export default function MarkupEditor({
           <p className="text-xs text-gray-600 dark:text-gray-400">Drag the line itself to move it.</p>
           <button
             onClick={() => handleToggleFlip(selectedMarker.id)}
-            className="self-start rounded-md border px-2 py-1 text-xs font-medium hover:bg-gray-50 dark:border-gray-600 dark:hover:bg-gray-700"
+            className="self-start rounded-md border px-2 py-1 text-xs font-medium hover:bg-gray-50 dark:border-gray-700 dark:hover:bg-gray-800"
           >
             Flip view direction
           </button>
         </div>
       )}
 
-      <textarea
-        key={selectedMarker.id}
-        defaultValue={selectedMarker.note ?? ""}
-        placeholder="Add a note..."
-        onBlur={(e) => handleNoteChange(selectedMarker.id, e.target.value)}
-        className="w-full rounded border px-2 py-1 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-100"
-        rows={2}
-      />
+      {selectedMarker.type === "NOTE" && (
+        <textarea
+          key={selectedMarker.id}
+          defaultValue={selectedMarker.note ?? ""}
+          placeholder="Add a note..."
+          onBlur={(e) => handleNoteChange(selectedMarker.id, e.target.value)}
+          className="w-full rounded border px-2 py-1 dark:border-gray-700 dark:bg-black dark:text-gray-100"
+          rows={2}
+        />
+      )}
     </div>
   );
 
@@ -1314,29 +1519,29 @@ export default function MarkupEditor({
 
   const submitFooter = !readOnly &&
     (status === "submitted" ? (
-      <span className="font-medium text-green-700 dark:text-green-400">Submitted</span>
+      <span className="font-medium text-green-700 dark:text-emerald-500">Submitted</span>
     ) : (
       <div className="flex flex-col gap-2">
         <button
           onClick={() => handleReset("page")}
           disabled={resetting !== null}
-          className="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-red-700 hover:bg-gray-50 disabled:opacity-50 dark:border-gray-600 dark:bg-gray-800 dark:text-red-400 dark:hover:bg-gray-700"
+          className="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-red-700 hover:bg-gray-50 disabled:opacity-50 dark:border-gray-700 dark:bg-gray-900 dark:text-red-500 dark:hover:bg-gray-800"
         >
-          {resetting === "page" ? "Resetting..." : "Reset this page"}
+          {resetting === "page" ? "Resetting..." : "Reset Page"}
         </button>
         <button
           onClick={() => handleReset("project")}
           disabled={resetting !== null}
-          className="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-red-700 hover:bg-gray-50 disabled:opacity-50 dark:border-gray-600 dark:bg-gray-800 dark:text-red-400 dark:hover:bg-gray-700"
+          className="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-red-700 hover:bg-gray-50 disabled:opacity-50 dark:border-gray-700 dark:bg-gray-900 dark:text-red-500 dark:hover:bg-gray-800"
         >
-          {resetting === "project" ? "Resetting..." : "Reset entire project"}
+          {resetting === "project" ? "Resetting..." : "Reset Project"}
         </button>
         <button
           onClick={handleSubmit}
           disabled={submitting}
           className="rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-50"
         >
-          {submitting ? "Submitting..." : "Submit markup"}
+          {submitting ? "Submitting..." : "Submit"}
         </button>
       </div>
     ));
@@ -1345,7 +1550,7 @@ export default function MarkupEditor({
   // the canvas, with the active tab's background matching the canvas so it
   // visually reads as part of the same surface.
   const pageTabsStrip = (
-    <div className="flex items-end gap-0.5 overflow-x-auto rounded-b-lg border border-t-0 border-gray-200 bg-gray-200 px-2 pt-3 dark:border-gray-700 dark:bg-gray-950">
+    <div className="flex items-end gap-0.5 overflow-x-auto rounded-b-lg border border-t-0 border-gray-200 bg-gray-200 px-2 pt-3 dark:border-gray-800 dark:bg-gray-950">
       {pages.map((p) => (
         <div key={p.id} className="group relative">
           <button
@@ -1356,8 +1561,8 @@ export default function MarkupEditor({
             }}
             className={`whitespace-nowrap rounded-t-md border px-3 py-1.5 text-sm font-medium ${
               p.id === activePageId
-                ? "border-gray-200 border-b-transparent bg-gray-50 text-gray-900 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100"
-                : "border-transparent text-gray-600 hover:bg-gray-300/50 dark:text-gray-400 dark:hover:bg-gray-800/50"
+                ? "border-gray-200 border-b-transparent bg-gray-50 text-gray-900 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-100"
+                : "border-transparent text-gray-600 hover:bg-gray-300/50 dark:text-gray-400 dark:hover:bg-gray-900/50"
             }`}
           >
             Page {p.pageNumber}
@@ -1377,10 +1582,20 @@ export default function MarkupEditor({
   );
 
   return (
-    <div className="fixed inset-0 z-50 flex bg-white dark:bg-gray-900">
+    <div
+      className={`flex flex-col bg-white md:flex-row dark:bg-black ${
+        embedded ? "relative h-full w-full" : "fixed inset-0 z-50"
+      }`}
+    >
+      <div className="rotate-device-overlay pointer-events-none fixed inset-0 z-[60] items-center justify-center bg-black/80 p-6 text-center text-white">
+        <div>
+          <p className="text-3xl">⟲</p>
+          <p className="mt-2 text-sm font-medium">Rotate your device for the best experience</p>
+        </div>
+      </div>
       <div
         ref={ribbonRef}
-        className="flex w-72 shrink-0 flex-col gap-4 overflow-y-auto border-r border-gray-200 bg-gray-50 p-4 dark:border-gray-700 dark:bg-gray-900"
+        className="flex max-h-[45vh] w-full shrink-0 flex-col gap-2 overflow-y-auto border-b border-gray-200 bg-gray-50 p-3 dark:border-gray-800 dark:bg-black md:max-h-none md:w-72 md:gap-3 md:border-b-0 md:border-r md:p-3"
       >
         <div>
           <h1 className="text-lg font-bold text-gray-900 dark:text-gray-100">{project.name}</h1>
@@ -1393,20 +1608,33 @@ export default function MarkupEditor({
         {headerExtra}
         {errorBanner}
         {lockedBanner}
-        {instructionsPanel}
 
         {toolPalette}
-        {countsPanel}
-        {selectedMarkerPanel}
 
-        <div className="mt-auto flex flex-col gap-3 border-t pt-3 dark:border-gray-700">
+        <div className="mt-auto flex flex-col gap-2 border-t pt-2 dark:border-gray-800">
           {totalsPanel}
           {submitFooter}
         </div>
       </div>
 
       <div className="flex flex-1 flex-col p-0">
-        <div className="relative flex-1">{canvasArea}</div>
+        <div className="relative flex-1">
+          {canvasArea}
+          {selectedMarkerPanel}
+          {helpBubble}
+          {deletedToast && (
+            <div className="absolute bottom-3 left-1/2 flex -translate-x-1/2 items-center gap-3 rounded-md border border-gray-300 bg-white px-3 py-2 text-sm shadow-md dark:border-gray-700 dark:bg-gray-900">
+              <span className="text-gray-800 dark:text-gray-200">{deletedToast.label} deleted</span>
+              <button
+                type="button"
+                onClick={handleUndoDelete}
+                className="font-medium text-blue-600 hover:underline dark:text-blue-500"
+              >
+                Undo
+              </button>
+            </div>
+          )}
+        </div>
         {pageTabsStrip}
       </div>
     </div>

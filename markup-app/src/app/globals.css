@@ -25,3 +25,16 @@ body {
   font-family: Arial, Helvetica, sans-serif;
   color-scheme: light dark;
 }
+
+/* Nudge to rotate on small portrait screens — no JS orientation API works
+   reliably across iOS Safari and non-installed Android Chrome, so this is
+   a pure-CSS overlay that the media query alone shows/hides live. */
+.rotate-device-overlay {
+  display: none;
+}
+
+@media (orientation: portrait) and (max-width: 768px) {
+  .rotate-device-overlay {
+    display: flex;
+  }
+}

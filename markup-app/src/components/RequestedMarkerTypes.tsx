@@ -41,7 +41,7 @@ export default function RequestedMarkerTypes({
             update({ allowIE: e.target.checked });
           }}
         />
-        IE Locations
+        IE
       </label>
       <label className="flex items-center gap-1.5 text-xs text-gray-600 dark:text-gray-400">
         <input
@@ -53,7 +53,7 @@ export default function RequestedMarkerTypes({
             update({ allowSection: e.target.checked });
           }}
         />
-        Section Locations
+        Section
       </label>
     </div>
   );

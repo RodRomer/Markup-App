@@ -2,6 +2,27 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { saveFile } from "@/lib/storage";
 
+export async function GET() {
+  const projects = await prisma.project.findMany({
+    orderBy: { createdAt: "desc" },
+    include: { documents: { include: { pages: { include: { markers: true } } } } },
+  });
+
+  return NextResponse.json(
+    projects.map((project) => {
+      const allMarkers = project.documents.flatMap((d) => d.pages).flatMap((p) => p.markers);
+      return {
+        id: project.id,
+        name: project.name,
+        status: project.status,
+        createdAt: project.createdAt.toISOString(),
+        markerCount: allMarkers.length,
+        ieCount: allMarkers.filter((m) => m.type === "IE").length,
+      };
+    })
+  );
+}
+
 type PageMeta = { width: number; height: number };
 type UploadedPage = { imagePath: string; width: number; height: number };
 

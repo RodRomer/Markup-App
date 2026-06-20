@@ -1,13 +1,28 @@
 import { notFound } from "next/navigation";
-import { headers } from "next/headers";
-import Link from "next/link";
 import { prisma } from "@/lib/db";
 import { toProjectData } from "@/lib/types";
-import MarkupEditor from "@/components/MarkupEditor";
-import DeleteProjectButton from "@/components/DeleteProjectButton";
-import ReopenProjectButton from "@/components/ReopenProjectButton";
-import RequestedMarkerTypes from "@/components/RequestedMarkerTypes";
-import CopyLinkButton from "@/components/CopyLinkButton";
+import StaffShell, { type ProjectListItem } from "@/components/StaffShell";
+
+export const dynamic = "force-dynamic";
+
+async function fetchProjectList(): Promise<ProjectListItem[]> {
+  const projects = await prisma.project.findMany({
+    orderBy: { createdAt: "desc" },
+    include: { documents: { include: { pages: { include: { markers: true } } } } },
+  });
+
+  return projects.map((project) => {
+    const allMarkers = project.documents.flatMap((d) => d.pages).flatMap((p) => p.markers);
+    return {
+      id: project.id,
+      name: project.name,
+      status: project.status,
+      createdAt: project.createdAt.toISOString(),
+      markerCount: allMarkers.length,
+      ieCount: allMarkers.filter((m) => m.type === "IE").length,
+    };
+  });
+}
 
 export default async function StaffProjectPage({
   params,
@@ -16,65 +31,28 @@ export default async function StaffProjectPage({
 }) {
   const { projectId } = await params;
 
-  const project = await prisma.project.findUnique({
-    where: { id: projectId },
-    include: {
-      documents: {
-        include: {
-          pages: { include: { markers: { include: { directions: { orderBy: { order: "asc" } } } } } },
+  const [projects, project] = await Promise.all([
+    fetchProjectList(),
+    prisma.project.findUnique({
+      where: { id: projectId },
+      include: {
+        documents: {
+          include: {
+            pages: { include: { markers: { include: { directions: { orderBy: { order: "asc" } } } } } },
+          },
         },
       },
-    },
-  });
+    }),
+  ]);
 
   if (!project) notFound();
 
-  const host = (await headers()).get("host");
-  const shareUrl = `${process.env.NODE_ENV === "production" ? "https" : "http"}://${host}/markup/${project.shareToken}`;
-
-  const headerExtra = (
-    <div className="flex flex-col gap-2 border-b border-gray-200 pb-3 dark:border-gray-700">
-      <Link
-        href="/staff"
-        className="text-sm font-medium text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-100"
-      >
-        ← Back to dashboard
-      </Link>
-      <p className="flex flex-wrap items-center gap-2 text-xs break-all text-gray-600 dark:text-gray-400">
-        Client link:{" "}
-        <a href={shareUrl} className="font-medium text-blue-600 underline dark:text-blue-400">
-          {shareUrl}
-        </a>
-        <CopyLinkButton url={shareUrl} />
-      </p>
-      <div className="flex flex-wrap items-center gap-2">
-        {project.status === "submitted" && (
-          <>
-            <a
-              href={`/api/projects/${project.id}/pdf`}
-              className="rounded-md border border-gray-300 bg-white px-2 py-1 text-xs font-medium text-green-700 hover:bg-gray-50 dark:border-gray-600 dark:bg-gray-800 dark:text-green-400 dark:hover:bg-gray-700"
-            >
-              Download PDF
-            </a>
-            <ReopenProjectButton shareToken={project.shareToken} />
-          </>
-        )}
-        <DeleteProjectButton projectId={project.id} projectName={project.name} redirectTo="/staff" />
-      </div>
-      <RequestedMarkerTypes
-        projectId={project.id}
-        allowIE={project.allowIE}
-        allowSection={project.allowSection}
-      />
-    </div>
-  );
-
   return (
-    <MarkupEditor
-      token={project.shareToken}
-      project={toProjectData(project)}
-      readOnly
-      headerExtra={headerExtra}
+    <StaffShell
+      initialProjects={projects}
+      initialSelectedId={project.id}
+      initialDetail={{ ...toProjectData(project), createdAt: project.createdAt.toISOString() }}
+      useBlob={!!process.env.BLOB_READ_WRITE_TOKEN}
     />
   );
 }
