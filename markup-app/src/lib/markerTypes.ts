@@ -10,3 +10,8 @@ export const MARKER_TYPE_INFO: Record<
   SECTION: { label: "Section", shortLabel: "S", color: "#2563eb" },
   NOTE: { label: "Note", shortLabel: "N", color: "#ca8a04" },
 };
+
+/** Pulls the sequence number off a marker label like "Note 3" — shown inside the Note marker's circle. */
+export function noteNumber(label: string): string {
+  return label.match(/(\d+)\s*$/)?.[1] ?? "";
+}

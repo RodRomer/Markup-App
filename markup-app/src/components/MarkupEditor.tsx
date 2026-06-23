@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { MARKER_TYPES, MARKER_TYPE_INFO, type MarkerType } from "@/lib/markerTypes";
+import { MARKER_TYPES, MARKER_TYPE_INFO, noteNumber, type MarkerType } from "@/lib/markerTypes";
 import {
   arrowTipPoint,
   arrowWedgePoints,
@@ -612,19 +612,23 @@ export default function MarkupEditor({
 
   // --- Dragging existing geometry (a point, or one IE direction arrow) ---
 
+  // Staff (readOnly) can still select a locked marker to view its info, just
+  // never drag it — everyone else keeps the original "locked = untouchable" behavior.
   function handlePointPointerDown(e: React.PointerEvent, markerId: string, field: "primary" | "secondary") {
-    if (locked) return;
+    if (locked && !readOnly) return;
     e.stopPropagation();
-    (e.target as Element).setPointerCapture(e.pointerId);
     setSelectedMarkerId(markerId);
+    if (locked) return;
+    (e.target as Element).setPointerCapture(e.pointerId);
     setDragTarget({ kind: "point", markerId, field });
   }
 
   function handleLinePointerDown(e: React.PointerEvent, markerId: string) {
-    if (locked) return;
+    if (locked && !readOnly) return;
     e.stopPropagation();
-    (e.target as Element).setPointerCapture(e.pointerId);
     setSelectedMarkerId(markerId);
+    if (locked) return;
+    (e.target as Element).setPointerCapture(e.pointerId);
     const marker = findMarker(markerId);
     if (!marker || marker.x2 == null || marker.y2 == null) return;
     const startRel = relativePosition(e.clientX, e.clientY);
@@ -1074,7 +1078,10 @@ export default function MarkupEditor({
                       y2={y2}
                       stroke="transparent"
                       strokeWidth={activePage.width * 0.014}
-                      style={{ pointerEvents: locked ? "none" : "auto", cursor: "move" }}
+                      style={{
+                        pointerEvents: locked && !readOnly ? "none" : "auto",
+                        cursor: locked ? (readOnly ? "pointer" : undefined) : "move",
+                      }}
                       onPointerDown={(e) => handleLinePointerDown(e, m.id)}
                       onPointerMove={handleDragMove}
                       onPointerUp={handleDragEnd}
@@ -1121,7 +1128,10 @@ export default function MarkupEditor({
                             fill={MARKER_TYPE_INFO.SECTION.color}
                             stroke="black"
                             strokeWidth={outlineWidth}
-                            style={{ pointerEvents: locked ? "none" : "auto", cursor: locked ? undefined : "move" }}
+                            style={{
+                              pointerEvents: locked && !readOnly ? "none" : "auto",
+                              cursor: locked ? (readOnly ? "pointer" : undefined) : "move",
+                            }}
                             onPointerDown={(e) => handlePointPointerDown(e, m.id, field)}
                             onPointerMove={handleDragMove}
                             onPointerUp={handleDragEnd}
@@ -1192,7 +1202,10 @@ export default function MarkupEditor({
                       fill={MARKER_TYPE_INFO.IE.color}
                       stroke="black"
                       strokeWidth={outlineWidth}
-                      style={{ pointerEvents: locked ? "none" : "auto", cursor: locked ? undefined : "move" }}
+                      style={{
+                        pointerEvents: locked && !readOnly ? "none" : "auto",
+                        cursor: locked ? (readOnly ? "pointer" : undefined) : "move",
+                      }}
                       onPointerDown={(e) => handlePointPointerDown(e, m.id, "primary")}
                       onPointerMove={handleDragMove}
                       onPointerUp={handleDragEnd}
@@ -1257,13 +1270,27 @@ export default function MarkupEditor({
                       fill={MARKER_TYPE_INFO.NOTE.color}
                       stroke="black"
                       strokeWidth={outlineWidth}
-                      style={{ pointerEvents: locked ? "none" : "auto", cursor: locked ? undefined : "move" }}
+                      style={{
+                        pointerEvents: locked && !readOnly ? "none" : "auto",
+                        cursor: locked ? (readOnly ? "pointer" : undefined) : "move",
+                      }}
                       onPointerDown={(e) => handlePointPointerDown(e, m.id, "primary")}
                       onPointerMove={handleDragMove}
                       onPointerUp={handleDragEnd}
                     >
                       <title>{m.label}</title>
                     </circle>
+                    <text
+                      x={cx}
+                      y={cy}
+                      fontSize={r * 1.3}
+                      textAnchor="middle"
+                      dominantBaseline="central"
+                      fill="white"
+                      style={{ pointerEvents: "none" }}
+                    >
+                      {noteNumber(m.label)}
+                    </text>
                   </g>
                 );
               }
@@ -1310,8 +1337,8 @@ export default function MarkupEditor({
   const helpBubble = !readOnly && !locked && (
     <div className="absolute bottom-3 left-3 max-w-xs">
       {helpOpen ? (
-        <div className="rounded-lg border border-blue-200 bg-blue-50 p-3 text-sm text-blue-900 shadow-md dark:border-blue-800 dark:bg-blue-950 dark:text-blue-200">
-          <div className="mb-1 flex items-center justify-between gap-2">
+        <div className="flex max-h-[min(70vh,32rem)] flex-col overflow-y-auto rounded-lg border border-blue-200 bg-blue-50 text-sm text-blue-900 shadow-md dark:border-blue-800 dark:bg-blue-950 dark:text-blue-200">
+          <div className="sticky top-0 mb-1 flex items-center justify-between gap-2 bg-blue-50 p-3 pb-1 dark:bg-blue-950">
             <p className="font-semibold">How to mark up this plan</p>
             <button
               type="button"
@@ -1322,6 +1349,7 @@ export default function MarkupEditor({
               ✕
             </button>
           </div>
+          <div className="px-3 pb-3">
           <ol className="list-decimal space-y-1 pl-4">
             <li>Pick a marker type below: IE, Section, or Note.</li>
             <li>
@@ -1352,6 +1380,7 @@ export default function MarkupEditor({
             showing where a vertical section is taken — its flagged ends show which way that
             view looks.
           </p>
+          </div>
         </div>
       ) : (
         <button
@@ -1434,54 +1463,63 @@ export default function MarkupEditor({
   // Floats over the canvas (top-left, mirroring the zoom widget at top-right)
   // instead of living in the ribbon — settings for a marker you just clicked
   // on the canvas belong near that marker, not back in the tool palette.
-  const selectedMarkerPanel = selectedMarker && !locked && (
+  // Staff (readOnly) can select a marker to view its info even though the
+  // markup itself is locked — everyone else only sees this while editing.
+  const selectedMarkerPanel = selectedMarker && (!locked || readOnly) && (
     <div
       ref={selectedMarkerPanelRef}
       className="absolute top-3 left-3 max-w-xs rounded-md border border-gray-200 bg-white/95 p-3 text-sm shadow-md backdrop-blur-sm dark:border-gray-700 dark:bg-black/95"
     >
       <div className="mb-2 flex items-center justify-between gap-2">
         <span className="font-semibold text-gray-900 dark:text-gray-100">{selectedMarker.label}</span>
-        <div className="flex gap-1.5">
-          <button
-            onClick={() => handleDeleteMarker(selectedMarker.id)}
-            className="rounded-md border border-gray-300 bg-white px-2 py-1 text-xs font-medium text-red-700 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-900 dark:text-red-500 dark:hover:bg-gray-800"
-          >
-            Delete marker
-          </button>
-        </div>
-      </div>
-
-      {selectedMarker.type === "IE" && (
-        <div className="mb-2 flex flex-col gap-1.5">
-          <span className="text-gray-700 dark:text-gray-300">
-            Drag the ↻ handle on the canvas to rotate the whole group.
-          </span>
-          <div className="flex items-center gap-2">
-            <span className="text-gray-700 dark:text-gray-300">Arrows:</span>
+        {!readOnly && (
+          <div className="flex gap-1.5">
             <button
-              onClick={() => handleRemoveDirection(selectedMarker.id)}
-              disabled={selectedMarker.directions.length <= 1}
-              aria-label="Remove an arrow"
-              className="flex h-6 w-6 items-center justify-center rounded-md border text-sm font-medium hover:bg-gray-50 disabled:opacity-40 dark:border-gray-700 dark:hover:bg-gray-800"
+              onClick={() => handleDeleteMarker(selectedMarker.id)}
+              className="rounded-md border border-gray-300 bg-white px-2 py-1 text-xs font-medium text-red-700 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-900 dark:text-red-500 dark:hover:bg-gray-800"
             >
-              −
-            </button>
-            <span className="w-4 text-center font-semibold text-gray-900 dark:text-gray-100">
-              {selectedMarker.directions.length}
-            </span>
-            <button
-              onClick={() => handleAddDirection(selectedMarker.id)}
-              disabled={selectedMarker.directions.length >= 4}
-              aria-label="Add an arrow"
-              className="flex h-6 w-6 items-center justify-center rounded-md border text-sm font-medium hover:bg-gray-50 disabled:opacity-40 dark:border-gray-700 dark:hover:bg-gray-800"
-            >
-              +
+              Delete marker
             </button>
           </div>
-        </div>
-      )}
+        )}
+      </div>
 
-      {selectedMarker.type === "SECTION" && (
+      {selectedMarker.type === "IE" &&
+        (readOnly ? (
+          <p className="text-gray-700 dark:text-gray-300">
+            Arrows: <span className="font-semibold text-gray-900 dark:text-gray-100">{selectedMarker.directions.length}</span>
+          </p>
+        ) : (
+          <div className="mb-2 flex flex-col gap-1.5">
+            <span className="text-gray-700 dark:text-gray-300">
+              Drag the ↻ handle on the canvas to rotate the whole group.
+            </span>
+            <div className="flex items-center gap-2">
+              <span className="text-gray-700 dark:text-gray-300">Arrows:</span>
+              <button
+                onClick={() => handleRemoveDirection(selectedMarker.id)}
+                disabled={selectedMarker.directions.length <= 1}
+                aria-label="Remove an arrow"
+                className="flex h-6 w-6 items-center justify-center rounded-md border text-sm font-medium hover:bg-gray-50 disabled:opacity-40 dark:border-gray-700 dark:hover:bg-gray-800"
+              >
+                −
+              </button>
+              <span className="w-4 text-center font-semibold text-gray-900 dark:text-gray-100">
+                {selectedMarker.directions.length}
+              </span>
+              <button
+                onClick={() => handleAddDirection(selectedMarker.id)}
+                disabled={selectedMarker.directions.length >= 4}
+                aria-label="Add an arrow"
+                className="flex h-6 w-6 items-center justify-center rounded-md border text-sm font-medium hover:bg-gray-50 disabled:opacity-40 dark:border-gray-700 dark:hover:bg-gray-800"
+              >
+                +
+              </button>
+            </div>
+          </div>
+        ))}
+
+      {selectedMarker.type === "SECTION" && !readOnly && (
         <div className="mb-2 flex flex-col gap-1">
           <p className="text-xs text-gray-600 dark:text-gray-400">Drag the line itself to move it.</p>
           <button
@@ -1493,16 +1531,21 @@ export default function MarkupEditor({
         </div>
       )}
 
-      {selectedMarker.type === "NOTE" && (
-        <textarea
-          key={selectedMarker.id}
-          defaultValue={selectedMarker.note ?? ""}
-          placeholder="Add a note..."
-          onBlur={(e) => handleNoteChange(selectedMarker.id, e.target.value)}
-          className="w-full rounded border px-2 py-1 dark:border-gray-700 dark:bg-black dark:text-gray-100"
-          rows={2}
-        />
-      )}
+      {selectedMarker.type === "NOTE" &&
+        (readOnly ? (
+          <p className="whitespace-pre-wrap text-gray-700 dark:text-gray-300">
+            {selectedMarker.note?.trim() || <span className="text-gray-400 dark:text-gray-500">No note text.</span>}
+          </p>
+        ) : (
+          <textarea
+            key={selectedMarker.id}
+            defaultValue={selectedMarker.note ?? ""}
+            placeholder="Add a note..."
+            onBlur={(e) => handleNoteChange(selectedMarker.id, e.target.value)}
+            className="w-full rounded border px-2 py-1 dark:border-gray-700 dark:bg-black dark:text-gray-100"
+            rows={2}
+          />
+        ))}
     </div>
   );
 

@@ -2,7 +2,7 @@ import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
 import { readFile } from "fs/promises";
 import path from "path";
 import { arrowWedgePoints, DOT_RADIUS_FACTOR, sectionFlagPolygonPoints } from "./markerGeometry";
-import { MARKER_TYPE_INFO } from "./markerTypes";
+import { MARKER_TYPE_INFO, noteNumber } from "./markerTypes";
 import type { MarkerData, ProjectData } from "./types";
 
 const LETTER: [number, number] = [612, 792];
@@ -144,6 +144,18 @@ export async function generateProjectPdf(project: ProjectData): Promise<Uint8Arr
         borderColor: rgb(0, 0, 0),
         borderWidth: size * 0.12,
       });
+      const text = noteNumber(m.label);
+      if (text) {
+        const fontSize = size * 1.3;
+        const textWidth = font.widthOfTextAtSize(text, fontSize);
+        pdfPage.drawText(text, {
+          x: cx - textWidth / 2,
+          y: flipY(cy) - fontSize * 0.36,
+          size: fontSize,
+          font,
+          color: rgb(1, 1, 1),
+        });
+      }
     }
 
     if (pageData.kind === "pdf") {
