@@ -42,9 +42,9 @@ async function createProjectAndDocument(
   return { project, document };
 }
 
-// Pages already uploaded directly to Blob storage from the browser (see
-// /api/blob-upload) — this request only carries metadata + URLs, no file
-// bytes, so it skips Vercel's serverless request-body size limit entirely.
+// Pages already uploaded directly to Blob storage by the caller — this
+// request only carries metadata + URLs, no file bytes, so it skips Vercel's
+// serverless request-body size limit entirely.
 async function handleJsonBody(request: Request) {
   const body = await request.json();
   const { name, kind, originalFilename, allowIE = true, allowSection = true, pages } = body as {
