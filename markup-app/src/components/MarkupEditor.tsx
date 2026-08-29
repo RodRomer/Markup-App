@@ -227,10 +227,6 @@ export default function MarkupEditor({
   }
 
   const [focusNoteId, setFocusNoteId] = useState<string | null>(null);
-  // Every marker action writes to the server immediately. Failures already shout
-  // via the error banner, but success said nothing at all -- on a job-site
-  // connection that's indistinguishable from the app doing nothing.
-  const [savedAt, setSavedAt] = useState(0);
   const [confirmingSubmit, setConfirmingSubmit] = useState(false);
   const [reopening, setReopening] = useState(false);
   const noteInputRef = useRef<HTMLTextAreaElement | null>(null);
@@ -298,8 +294,15 @@ export default function MarkupEditor({
 
   // Fit the plan to the viewport (and reset zoom) whenever the active page changes.
   useEffect(() => {
+    // set-state-in-effect is deliberate: the fit width can only be measured once the
+    // viewport and content are laid out, so it cannot be computed during render.
+    // Restructuring this would mean reworking how zoom initialises, which is the one
+    // part of this component that is intentionally left alone.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setBaseWidth(computeFitWidth());
     setZoom(1);
+    // Intentionally keyed on the page only. Adding computeFitWidth would re-fit on
+    // every render and change zoom behaviour.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activePageId]);
 
@@ -307,7 +310,12 @@ export default function MarkupEditor({
   // Also covers the case where the image was already cached (no fresh "load"
   // event) — the <img onLoad> handler below covers the slow-load case.
   useEffect(() => {
+    // Same reasoning as above -- centring depends on the fit width having actually
+    // landed in the DOM, which is only knowable after layout.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setPan(centerPan(zoom));
+    // Keyed on the fit width only -- re-centring on every zoom change would fight the
+    // user's own panning.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [baseWidth]);
 
@@ -352,6 +360,9 @@ export default function MarkupEditor({
     }
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
+    // handleDeleteMarker is stable enough here; listing it would rebind the listener
+    // on every render for no benefit.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedMarkerId, locked]);
 
   // A revision is created empty, so put the caret in its text box as soon as the
@@ -363,20 +374,24 @@ export default function MarkupEditor({
     if (el) {
       el.focus();
       el.select();
+      // Clearing the request after the DOM has the textarea is the point of doing this
+      // in an effect -- there is nothing to focus during render.
       setFocusNoteId(null);
     }
   }, [focusNoteId, selectedMarkerId]);
 
   const [savedRecently, setSavedRecently] = useState(false);
-  useEffect(() => {
-    if (!savedAt) return;
-    setSavedRecently(true);
-    const t = setTimeout(() => setSavedRecently(false), 1800);
-    return () => clearTimeout(t);
-  }, [savedAt]);
+  const savedTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => {
+    if (savedTimer.current) clearTimeout(savedTimer.current);
+  }, []);
 
+  /** Shows "Saved" briefly. Every marker edit writes to the server immediately, and
+   *  silence after a successful write is indistinguishable from the app doing nothing. */
   function markSaved() {
-    setSavedAt(Date.now());
+    setSavedRecently(true);
+    if (savedTimer.current) clearTimeout(savedTimer.current);
+    savedTimer.current = setTimeout(() => setSavedRecently(false), 1800);
   }
 
   function updatePageMarkers(pageId: string, updater: (markers: MarkerData[]) => MarkerData[]) {
@@ -556,7 +571,7 @@ export default function MarkupEditor({
       return;
     }
     if (draft) {
-      handleDraftEnd(e);
+      handleDraftEnd();
       return;
     }
     const drag = panDragRef.current;
@@ -662,7 +677,7 @@ export default function MarkupEditor({
     setDraft((prev) => (prev ? { ...prev, current, currentClient } : prev));
   }
 
-  async function handleDraftEnd(e: React.PointerEvent) {
+  async function handleDraftEnd() {
     if (!draft || !activePage) return;
     const final = draft;
     setDraft(null);
@@ -1226,6 +1241,9 @@ export default function MarkupEditor({
           className="relative inline-block select-none"
           style={{ transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`, transformOrigin: "0 0" }}
         >
+          {/* eslint-disable-next-line @next/next/no-img-element --
+              the plan is pan/zoomed via a CSS transform and measured directly for
+              fit-to-viewport; next/image's wrapper and sizing get in the way of both */}
           <img
             src={activePage.imagePath}
             alt={`Page ${activePage.pageNumber}`}
