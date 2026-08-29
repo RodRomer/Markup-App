@@ -1,29 +1,80 @@
 @import "tailwindcss";
 
+/* The Markup App is the web face of Waystone, so it uses Waystone's palette
+   (gui/theme.py) rather than Tailwind's stock colors, and is dark-only like
+   the desktop app. Rather than rewriting every utility class in the
+   components, the gray/blue/green/red scales are remapped here to Waystone's
+   values -- the components keep using `bg-gray-900`, `dark:text-gray-300`
+   and so on, those tokens just resolve to Waystone colors now.
+
+   The scale is NOT inverted: components use the light end for text and the
+   dark end for surfaces, which is already how Tailwind's dark-mode classes
+   read, so each step is simply retinted in place.
+
+   The greys are now truly neutral (saturation 0) rather than blue-tinted -- a
+   neutral chrome never tints the white site plan sitting next to it, which
+   matters more here than anywhere else in the product. Hover states go LIGHTER,
+   because every coloured fill carries dark text. */
+
+/* Dark is unconditional -- <html> carries the `dark` class and nothing
+   removes it. Every light-mode class in the app has a dark: counterpart that
+   overrides it (the one deliberate exception is the blue Submit button,
+   which is meant to look the same either way). */
+@custom-variant dark (&:where(.dark, .dark *));
+
+@theme {
+  /* surfaces, darkest to lightest */
+  --color-black: #171717;      /* BG */
+  --color-gray-950: #0d0d0d;   /* TITLE_BAR */
+  --color-gray-900: #242424;   /* SURFACE */
+  --color-gray-800: #2e2e2e;   /* BORDER_DEFAULT -- used for both borders and raised fills */
+  --color-gray-700: #474747;   /* BORDER_STRONG */
+  --color-gray-600: #666666;
+  /* text, dimmest to brightest */
+  --color-gray-500: #8c8c8c;   /* TEXT_TERTIARY */
+  --color-gray-400: #a0a0a0;
+  --color-gray-300: #b2b2b2;   /* TEXT_SECONDARY */
+  --color-gray-200: #d9d9d9;
+  --color-gray-100: #f2f2f2;   /* TEXT_PRIMARY */
+  --color-gray-50: #f2f2f2;
+
+  /* accent */
+  --color-blue-950: #16203a;
+  --color-blue-900: #1c2b4d;
+  --color-blue-800: #2c3f66;
+  --color-blue-700: #7aa2ff;   /* ACCENT_HOVER */
+  --color-blue-600: #5286ff;   /* ACCENT */
+  --color-blue-500: #5590ff;
+  --color-blue-300: #a9c6ff;
+  --color-blue-200: #c3d7ff;
+  --color-blue-100: #d8e5ff;
+  --color-blue-50: #eaf1ff;
+
+  /* success -- SUCCESS #39d1ef (a lighter blue -- same family as the action blue, separated by lightness) */
+  --color-green-700: #89cbfa;
+  --color-emerald-500: #89cbfa;
+
+  /* no red in Waystone's palette; derived at the same saturation as
+     ACCENT/SUCCESS so it reads as part of the same family */
+  --color-red-700: #f7647c;
+  --color-red-500: #f7647c;
+}
+
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
-
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+  /* Paints the body itself, so it has to track the obsidian ground -- these are
+     plain CSS variables, not @theme tokens, and were missed when the palette
+     changed. Keep them in step with --color-black / --color-gray-100. */
+  --background: #171717;
+  --foreground: #f2f2f2;
+  color-scheme: dark;
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
-  color-scheme: light dark;
+  /* Waystone uses Segoe UI (theme.FONT_FAMILY); match it, and fall back the
+     way a Windows-first app should. */
+  font-family: "Segoe UI", system-ui, -apple-system, "Helvetica Neue", Arial, sans-serif;
 }
 
 /* Nudge to rotate on small portrait screens — no JS orientation API works

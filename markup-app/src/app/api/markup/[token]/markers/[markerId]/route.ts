@@ -34,6 +34,7 @@ export async function PATCH(
     x2?: number;
     y2?: number;
     note?: string | null;
+    boxWidth?: number | null;
     flipped?: boolean;
   } = {};
   if (typeof body.x === "number") data.x = Math.min(1, Math.max(0, body.x));
@@ -41,6 +42,8 @@ export async function PATCH(
   if (typeof body.x2 === "number") data.x2 = Math.min(1, Math.max(0, body.x2));
   if (typeof body.y2 === "number") data.y2 = Math.min(1, Math.max(0, body.y2));
   if (typeof body.note === "string" || body.note === null) data.note = body.note;
+  if (typeof body.boxWidth === "number") data.boxWidth = Math.min(0.9, Math.max(0.05, body.boxWidth));
+  else if (body.boxWidth === null) data.boxWidth = null;
   if (typeof body.flipped === "boolean") data.flipped = body.flipped;
 
   const directions = body.directions;

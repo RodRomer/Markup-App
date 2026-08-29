@@ -23,10 +23,6 @@ export async function GET(
   if (!project) {
     return NextResponse.json({ error: "Project not found" }, { status: 404 });
   }
-  if (project.status !== "submitted") {
-    return NextResponse.json({ error: "Project has not been submitted yet" }, { status: 403 });
-  }
-
   const pdfBytes = await generateProjectPdf(toProjectData(project));
   const filename = `${project.name.replace(/[^a-z0-9\- _]/gi, "_")}.pdf`;
 

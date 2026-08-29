@@ -56,6 +56,7 @@ model Marker {
   flipped    Boolean           @default(false) // SECTION: which side the view flags point
   label      String
   note       String?
+  boxWidth   Float? // NOTE: width of the revision callout box, as a fraction of page width
   createdAt  DateTime          @default(now())
   directions MarkerDirection[] // IE: 1-4 view-direction angles
 }

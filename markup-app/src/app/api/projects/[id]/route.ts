@@ -2,11 +2,14 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { deleteFile } from "@/lib/storage";
 import { toProjectData } from "@/lib/types";
+import { requireStaff } from "@/lib/staffAuth";
 
 export async function GET(
-  _request: Request,
+  request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const denied = requireStaff(request);
+  if (denied) return denied;
   const { id } = await params;
 
   const project = await prisma.project.findUnique({
@@ -31,6 +34,8 @@ export async function PATCH(
   request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const denied = requireStaff(request);
+  if (denied) return denied;
   const { id } = await params;
   const body = await request.json();
 
@@ -43,9 +48,11 @@ export async function PATCH(
 }
 
 export async function DELETE(
-  _request: Request,
+  request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const denied = requireStaff(request);
+  if (denied) return denied;
   const { id } = await params;
 
   const project = await prisma.project.findUnique({

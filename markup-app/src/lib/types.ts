@@ -12,6 +12,8 @@ export type MarkerData = {
   directions: number[];
   label: string;
   note: string | null;
+  /** Revision callout width as a fraction of page width; null = derive from the text. */
+  boxWidth: number | null;
 };
 
 export type PageData = {
@@ -45,6 +47,7 @@ type MarkerWithRelations = {
   flipped: boolean;
   label: string;
   note: string | null;
+  boxWidth: number | null;
   directions: { angle: number; order: number }[];
 };
 
@@ -62,6 +65,7 @@ export function toMarkerData(m: MarkerWithRelations): MarkerData {
     directions: [...m.directions].sort((a, b) => a.order - b.order).map((d) => d.angle),
     label: m.label,
     note: m.note,
+    boxWidth: m.boxWidth ?? null,
   };
 }
 

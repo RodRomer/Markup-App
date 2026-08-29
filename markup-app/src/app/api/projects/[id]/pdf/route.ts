@@ -2,11 +2,14 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { toProjectData } from "@/lib/types";
 import { generateProjectPdf } from "@/lib/exportPdf";
+import { requireStaff } from "@/lib/staffAuth";
 
 export async function GET(
-  _request: Request,
+  request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const denied = requireStaff(request);
+  if (denied) return denied;
   const { id } = await params;
 
   const project = await prisma.project.findUnique({
@@ -23,10 +26,6 @@ export async function GET(
   if (!project) {
     return NextResponse.json({ error: "Project not found" }, { status: 404 });
   }
-  if (project.status !== "submitted") {
-    return NextResponse.json({ error: "Project has not been submitted yet" }, { status: 403 });
-  }
-
   const pdfBytes = await generateProjectPdf(toProjectData(project));
   const filename = `${project.name.replace(/[^a-z0-9\- _]/gi, "_")}.pdf`;
 

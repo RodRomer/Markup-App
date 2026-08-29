@@ -24,6 +24,8 @@ export async function POST(
   if (type === "SECTION" && (typeof x2 !== "number" || typeof y2 !== "number")) {
     return NextResponse.json({ error: "Section markers need a second endpoint" }, { status: 400 });
   }
+  const hasSecondPoint =
+    (type === "SECTION" || type === "NOTE") && typeof x2 === "number" && typeof y2 === "number";
 
   if (
     type === "IE" &&
@@ -56,8 +58,11 @@ export async function POST(
       type,
       x: Math.min(1, Math.max(0, x)),
       y: Math.min(1, Math.max(0, y)),
-      x2: type === "SECTION" ? Math.min(1, Math.max(0, x2)) : null,
-      y2: type === "SECTION" ? Math.min(1, Math.max(0, y2)) : null,
+      // SECTION uses x2/y2 as its far endpoint; NOTE uses them as its text-box
+      // corner. Both are optional for NOTE -- a plain click places one without a
+      // drag, and revisionBoxPosition() falls back to a default offset.
+      x2: hasSecondPoint ? Math.min(1, Math.max(0, x2)) : null,
+      y2: hasSecondPoint ? Math.min(1, Math.max(0, y2)) : null,
       label,
       note: typeof note === "string" ? note : null,
       flipped: type === "SECTION" && flipped === true,

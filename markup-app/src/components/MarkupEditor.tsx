@@ -1,7 +1,16 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { MARKER_TYPES, MARKER_TYPE_INFO, noteNumber, type MarkerType } from "@/lib/markerTypes";
+import {
+  MARKER_TYPES,
+  MARKER_TYPE_INFO,
+  defaultRevisionBox,
+  revisionBoxPosition,
+  helveticaWidth,
+  REVISION_FONT_FAMILY,
+  wrapToWidth,
+  type MarkerType,
+} from "@/lib/markerTypes";
 import {
   arrowTipPoint,
   arrowWedgePoints,
@@ -14,7 +23,16 @@ import type { MarkerData, ProjectData } from "@/lib/types";
 import DownloadPdfButton from "./DownloadPdfButton";
 
 type DragTarget =
-  | { kind: "point"; markerId: string; field: "primary" | "secondary" }
+  | { kind: "boxWidth"; markerId: string; originX: number }
+  | {
+      kind: "point";
+      markerId: string;
+      field: "primary" | "secondary";
+      // Revision text boxes are grabbed anywhere on their surface, so the point
+      // being dragged is offset from the cursor. Small endpoint handles leave
+      // this undefined and keep snapping straight to the pointer.
+      grabOffset?: { dx: number; dy: number };
+    }
   | { kind: "direction"; markerId: string; index: number; origDirections: number[] }
   | {
       kind: "whole";
@@ -57,7 +75,19 @@ function clamp(value: number, min: number, max: number) {
 }
 
 // Friendlier than MARKER_TYPE_INFO's shortLabel ("S") for count displays.
-const COUNT_LABEL: Record<MarkerType, string> = { IE: "IE", SECTION: "Section", NOTE: "Note" };
+// Section cut lines and revision leaders are the same weight of line and are drawn
+// from this single factor, so changing one changes both.
+// Default callout text width, as a fraction of page width. Equivalent to the ~34
+// characters the old character-count wrapper allowed at this font size; an earlier
+// pass set this to 0.085, which halved the box and turned two-line callouts into
+// four-line ones.
+const REVISION_TEXT_WIDTH = 0.163;
+
+const MARKER_LINE_FACTOR = 0.0022;
+
+const HELP_DISMISSED_KEY = "markup.helpDismissed";
+
+const COUNT_LABEL: Record<MarkerType, string> = { IE: "IE", SECTION: "Section", NOTE: "Revision" };
 
 function emptyCounts(): Record<MarkerType, number> {
   return { IE: 0, SECTION: 0, NOTE: 0 };
@@ -84,6 +114,15 @@ function countByType(markers: MarkerData[]): Record<MarkerType, number> {
 // to that same resulting radius directly.
 const ICON_WEDGE_SIZE = 20;
 const ICON_DOT_RADIUS = ICON_WEDGE_SIZE * DOT_RADIUS_FACTOR;
+
+function SelectionHalo({ cx, cy, r, w }: { cx: number; cy: number; r: number; w: number }) {
+  return (
+    <g style={{ pointerEvents: "none" }}>
+      <circle cx={cx} cy={cy} r={r} fill="none" stroke="#ffffff" strokeWidth={w * 2.6} opacity={0.9} />
+      <circle cx={cx} cy={cy} r={r} fill="none" stroke="#111827" strokeWidth={w} strokeDasharray={`${w * 3} ${w * 2}`} />
+    </g>
+  );
+}
 
 function ToolIcon({ type, size = 24 }: { type: MarkerType; size?: number }) {
   const color = MARKER_TYPE_INFO[type].color;
@@ -130,9 +169,16 @@ function ToolIcon({ type, size = 24 }: { type: MarkerType; size?: number }) {
       </svg>
     );
   }
+  // A revision is a leader into a text box, so the icon shows that rather than the
+  // plain dot it inherited from the old note marker. Wider viewBox like SECTION so
+  // the callout reads at icon size instead of being crushed into a square.
   return (
-    <svg viewBox="0 0 40 40" style={boxStyle}>
-      <circle cx={20} cy={20} r={ICON_DOT_RADIUS} fill={color} stroke="black" strokeWidth={0.6} />
+    <svg viewBox="0 0 80 40" style={{ width: size * 1.6, height: size, flexShrink: 0 }}>
+      <line x1={9} y1={32} x2={34} y2={20} stroke={color} strokeWidth={2.6} />
+      <polygon points="9,32 19,30.5 16,23.5" fill={color} />
+      <rect x={34} y={7} width={38} height={22} rx={3} fill="none" stroke={color} strokeWidth={2.6} />
+      <line x1={40} y1={15} x2={62} y2={15} stroke={color} strokeWidth={2.2} opacity={0.55} />
+      <line x1={40} y1={22} x2={55} y2={22} stroke={color} strokeWidth={2.2} opacity={0.55} />
     </svg>
   );
 }
@@ -154,7 +200,40 @@ export default function MarkupEditor({
   const [zoom, setZoom] = useState(1);
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const [baseWidth, setBaseWidth] = useState(DEFAULT_BASE_WIDTH);
+  // Opens by default for a first-time client, but stays shut once dismissed --
+  // it covers a good part of the plan, and re-explaining every visit to someone
+  // who already knows the tool is just an obstacle. Wrapped because storage
+  // access throws outright in some privacy modes.
   const [helpOpen, setHelpOpen] = useState(true);
+  useEffect(() => {
+    try {
+      // Deliberately post-mount: localStorage does not exist during server
+      // rendering, so seeding this as initial state would make the server and the
+      // client disagree and break hydration.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      if (window.localStorage.getItem(HELP_DISMISSED_KEY) === "1") setHelpOpen(false);
+    } catch {
+      /* private mode -- just leave it open */
+    }
+  }, []);
+
+  function dismissHelp() {
+    setHelpOpen(false);
+    try {
+      window.localStorage.setItem(HELP_DISMISSED_KEY, "1");
+    } catch {
+      /* nothing to do -- it simply reopens next visit */
+    }
+  }
+
+  const [focusNoteId, setFocusNoteId] = useState<string | null>(null);
+  // Every marker action writes to the server immediately. Failures already shout
+  // via the error banner, but success said nothing at all -- on a job-site
+  // connection that's indistinguishable from the app doing nothing.
+  const [savedAt, setSavedAt] = useState(0);
+  const [confirmingSubmit, setConfirmingSubmit] = useState(false);
+  const [reopening, setReopening] = useState(false);
+  const noteInputRef = useRef<HTMLTextAreaElement | null>(null);
   const [iePreset, setIePreset] = useState<number[]>([0, 90, 180, 270]);
   const [deletedToast, setDeletedToast] = useState<MarkerData | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -275,6 +354,31 @@ export default function MarkupEditor({
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [selectedMarkerId, locked]);
 
+  // A revision is created empty, so put the caret in its text box as soon as the
+  // panel renders. Runs after the marker is in state, not at creation time, or the
+  // textarea it targets doesn't exist yet.
+  useEffect(() => {
+    if (!focusNoteId || selectedMarkerId !== focusNoteId) return;
+    const el = noteInputRef.current;
+    if (el) {
+      el.focus();
+      el.select();
+      setFocusNoteId(null);
+    }
+  }, [focusNoteId, selectedMarkerId]);
+
+  const [savedRecently, setSavedRecently] = useState(false);
+  useEffect(() => {
+    if (!savedAt) return;
+    setSavedRecently(true);
+    const t = setTimeout(() => setSavedRecently(false), 1800);
+    return () => clearTimeout(t);
+  }, [savedAt]);
+
+  function markSaved() {
+    setSavedAt(Date.now());
+  }
+
   function updatePageMarkers(pageId: string, updater: (markers: MarkerData[]) => MarkerData[]) {
     setPages((prev) =>
       prev.map((p) => (p.id === pageId ? { ...p, markers: updater(p.markers) } : p))
@@ -312,15 +416,21 @@ export default function MarkupEditor({
     return `${MARKER_TYPE_INFO[type].label} ${count}`;
   }
 
+  // Every marker edit -- moving it, retyping its note, rotating a direction --
+  // funnels through here, so this is the one place that knows whether a change
+  // actually reached the server. It previously only caught network errors: an
+  // HTTP failure resolved normally and the edit was dropped in silence.
   async function patchMarker(markerId: string, body: Record<string, unknown>) {
     try {
-      await fetch(`/api/markup/${token}/markers/${markerId}`, {
+      const res = await fetch(`/api/markup/${token}/markers/${markerId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
       });
+      if (!res.ok) throw new Error("Failed to save change");
+      markSaved();
     } catch {
-      setError("Failed to save change");
+      setError("Couldn't save that change. Check your connection and try again.");
     }
   }
 
@@ -563,7 +673,25 @@ export default function MarkupEditor({
 
     let body: Record<string, unknown>;
     if (final.type === "NOTE") {
-      body = { pageId: activePage.id, type: "NOTE", x: final.start.x, y: final.start.y, label: nextLabel("NOTE") };
+      // Drag places the text box where you released; a plain click uses the default
+      // offset. Either way the position is written at creation, so every revision
+      // carries its own box coordinates rather than relying on a render-time default.
+      const dragged = dist >= MIN_SECTION_DRAG_PX;
+      const boxPos = dragged
+        ? { x2: final.current.x, y2: final.current.y }
+        : defaultRevisionBox(
+            final.start.x,
+            final.start.y,
+            activePage.markers.filter((mk) => mk.type === "NOTE").length
+          );
+      body = {
+        pageId: activePage.id,
+        type: "NOTE",
+        x: final.start.x,
+        y: final.start.y,
+        ...boxPos,
+        label: nextLabel("NOTE"),
+      };
     } else if (final.type === "IE") {
       body = {
         pageId: activePage.id,
@@ -595,7 +723,14 @@ export default function MarkupEditor({
       if (!res.ok) throw new Error((await res.json()).error ?? "Failed to add marker");
       const marker: MarkerData = await res.json();
       updatePageMarkers(activePage.id, (markers) => [...markers, marker]);
+      markSaved();
       setSelectedTool(null);
+      // A revision is useless until it has words in it, so select it and let the
+      // effect below drop the caret straight into its text box.
+      if (marker.type === "NOTE") {
+        setSelectedMarkerId(marker.id);
+        setFocusNoteId(marker.id);
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to add marker");
     }
@@ -603,12 +738,57 @@ export default function MarkupEditor({
 
   // --- Dragging existing geometry (a point, or one IE direction arrow) ---
 
+  /** Every marker whose clickable geometry sits within `tol` of a normalised point,
+   *  nearest first. Used to reach markers buried under other markers. */
+  function markersNear(pt: { x: number; y: number }, tol = 0.02): string[] {
+    if (!activePage) return [];
+    const d2 = (ax: number, ay: number) => (ax - pt.x) ** 2 + (ay - pt.y) ** 2;
+    const hits: { id: string; d: number }[] = [];
+    for (const m of activePage.markers) {
+      const points: [number, number][] = [[m.x, m.y]];
+      if (m.x2 != null && m.y2 != null) points.push([m.x2, m.y2]);
+      const best = Math.min(...points.map(([px, py]) => d2(px, py)));
+      if (best <= tol * tol) hits.push({ id: m.id, d: best });
+    }
+    return hits.sort((a, b) => a.d - b.d).map((h) => h.id);
+  }
+
+  /** Selects `markerId`, unless it is already selected and something else is stacked
+   *  under the same spot -- then it advances to the next one. */
+  function selectPossiblyStacked(markerId: string, at: { x: number; y: number }) {
+    if (selectedMarkerId !== markerId) {
+      setSelectedMarkerId(markerId);
+      return;
+    }
+    const stack = markersNear(at);
+    if (stack.length < 2) return;
+    const i = stack.indexOf(markerId);
+    setSelectedMarkerId(stack[(i + 1) % stack.length]);
+  }
+
   function handlePointPointerDown(e: React.PointerEvent, markerId: string, field: "primary" | "secondary") {
+    if (locked) return;
+    e.stopPropagation();
+    selectPossiblyStacked(markerId, relativePosition(e.clientX, e.clientY));
+    (e.target as Element).setPointerCapture(e.pointerId);
+    setDragTarget({ kind: "point", markerId, field });
+  }
+
+  function handleRevisionBoxPointerDown(e: React.PointerEvent, markerId: string) {
     if (locked) return;
     e.stopPropagation();
     setSelectedMarkerId(markerId);
     (e.target as Element).setPointerCapture(e.pointerId);
-    setDragTarget({ kind: "point", markerId, field });
+    const marker = findMarker(markerId);
+    if (!marker) return;
+    const box = revisionBoxPosition(marker);
+    const rel = relativePosition(e.clientX, e.clientY);
+    setDragTarget({
+      kind: "point",
+      markerId,
+      field: "secondary",
+      grabOffset: { dx: rel.x - box.x, dy: rel.y - box.y },
+    });
   }
 
   function handleLinePointerDown(e: React.PointerEvent, markerId: string) {
@@ -641,6 +821,10 @@ export default function MarkupEditor({
     if (!dragTarget) return;
     if (dragTarget.kind === "point") {
       let { x, y } = relativePosition(e.clientX, e.clientY);
+      if (dragTarget.grabOffset) {
+        x -= dragTarget.grabOffset.dx;
+        y -= dragTarget.grabOffset.dy;
+      }
       const marker = findMarker(dragTarget.markerId);
       if (marker?.type === "SECTION" && marker.x2 != null && marker.y2 != null) {
         const other = dragTarget.field === "primary" ? { x: marker.x2, y: marker.y2 } : { x: marker.x, y: marker.y };
@@ -651,6 +835,10 @@ export default function MarkupEditor({
       updateMarkerById(dragTarget.markerId, (m) =>
         dragTarget.field === "primary" ? { ...m, x, y } : { ...m, x2: x, y2: y }
       );
+    } else if (dragTarget.kind === "boxWidth") {
+      const cur = relativePosition(e.clientX, e.clientY);
+      const width = Math.min(0.9, Math.max(0.05, cur.x - dragTarget.originX / (activePage?.width ?? 1)));
+      updateMarkerById(dragTarget.markerId, (m) => ({ ...m, boxWidth: width }));
     } else if (dragTarget.kind === "whole") {
       const cur = relativePosition(e.clientX, e.clientY);
       const dx = cur.x - dragTarget.startRel.x;
@@ -691,6 +879,8 @@ export default function MarkupEditor({
       await patchMarker(marker.id, body);
     } else if (target.kind === "whole") {
       await patchMarker(marker.id, { x: marker.x, y: marker.y, x2: marker.x2, y2: marker.y2 });
+    } else if (target.kind === "boxWidth") {
+      await patchMarker(marker.id, { boxWidth: marker.boxWidth });
     } else {
       await patchMarker(marker.id, { directions: marker.directions });
     }
@@ -703,6 +893,7 @@ export default function MarkupEditor({
     try {
       const res = await fetch(`/api/markup/${token}/markers/${markerId}`, { method: "DELETE" });
       if (!res.ok) throw new Error((await res.json()).error ?? "Failed to delete marker");
+      markSaved();
       setPages((prev) => prev.map((p) => ({ ...p, markers: p.markers.filter((m) => m.id !== markerId) })));
       setSelectedMarkerId(null);
       if (marker) {
@@ -782,6 +973,26 @@ export default function MarkupEditor({
     setSelectedMarkerId(markerId);
     updateMarkerById(markerId, (m) => ({ ...m, flipped }));
     await patchMarker(markerId, { flipped });
+  }
+
+  // The share token in the URL is the credential for this route, same as every
+  // other client action, so reopening needs nothing from us. Previously only
+  // staff could unlock a submitted markup, which meant a client who spotted a
+  // mistake one second after submitting had to send an email and wait.
+  async function handleReopen() {
+    setReopening(true);
+    setError(null);
+    try {
+      const res = await fetch(`/api/markup/${token}/reopen`, { method: "POST" });
+      if (!res.ok) throw new Error((await res.json()).error ?? "Failed to reopen");
+      setStatus("sent");
+      setConfirmingSubmit(false);
+      markSaved();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to reopen");
+    } finally {
+      setReopening(false);
+    }
   }
 
   async function handleSubmit() {
@@ -989,7 +1200,15 @@ export default function MarkupEditor({
   // One shared outline weight for every marker part (IE arrows/dot, section
   // flags/dots, Note dot) so the line stays equally thin everywhere instead
   // of scaling with each marker type's own (very different) size.
-  const outlineWidth = (activePage?.width ?? 0) * 0.0005;
+  // Zoom is a CSS transform on the whole canvas, so SVG units scale with it and a
+  // marker placed at 400% used to render four times its intended size -- exactly when
+  // you have zoomed in to be precise. Dividing by the zoom holds markers at a roughly
+  // constant on-screen size. Clamped, because fully compensating at extreme zoom-out
+  // would swing it the other way and bury the plan under giant markers.
+  //
+  // This only affects how big markers are DRAWN. Pan/zoom behaviour is untouched.
+  const markerScale = 1 / Math.min(2.5, Math.max(0.7, zoom));
+  const outlineWidth = (activePage?.width ?? 0) * 0.0005 * markerScale;
 
   const canvasArea = activePage && (
     <div className="relative h-full w-full">
@@ -1027,7 +1246,7 @@ export default function MarkupEditor({
                 const y1 = m.y * activePage.height;
                 const x2 = m.x2 * activePage.width;
                 const y2 = m.y2 * activePage.height;
-                const flagSize = activePage.width * 0.01;
+                const flagSize = activePage.width * 0.01 * markerScale;
                 const lineRad = Math.atan2(y2 - y1, x2 - x1);
                 const viewDeg = ((lineRad + (Math.PI / 2) * (m.flipped ? -1 : 1)) * 180) / Math.PI;
                 const flipHandlePos = arrowTipPoint((x1 + x2) / 2, (y1 + y2) / 2, viewDeg, flagSize * 2.2);
@@ -1040,7 +1259,7 @@ export default function MarkupEditor({
                       x2={x2}
                       y2={y2}
                       stroke="transparent"
-                      strokeWidth={activePage.width * 0.014}
+                      strokeWidth={activePage.width * 0.014 * markerScale}
                       style={{
                         pointerEvents: locked ? "none" : "auto",
                         cursor: locked ? undefined : "move",
@@ -1054,8 +1273,17 @@ export default function MarkupEditor({
                       y1={y1}
                       x2={x2}
                       y2={y2}
+                      stroke="black"
+                      strokeWidth={activePage.width * MARKER_LINE_FACTOR * markerScale + outlineWidth * 2}
+                      style={{ pointerEvents: "none" }}
+                    />
+                    <line
+                      x1={x1}
+                      y1={y1}
+                      x2={x2}
+                      y2={y2}
                       stroke={MARKER_TYPE_INFO.SECTION.color}
-                      strokeWidth={activePage.width * 0.0022}
+                      strokeWidth={activePage.width * MARKER_LINE_FACTOR * markerScale}
                       style={{ pointerEvents: "none" }}
                     />
                     <polygon
@@ -1082,7 +1310,7 @@ export default function MarkupEditor({
                       return (
                         <g key={field}>
                           {selectedMarkerId === m.id && (
-                            <circle cx={x} cy={y} r={r * 1.5} fill="none" stroke="black" strokeWidth={outlineWidth} />
+                            <SelectionHalo cx={x} cy={y} r={r * 1.7} w={outlineWidth} />
                           )}
                           <circle
                             cx={x}
@@ -1140,7 +1368,7 @@ export default function MarkupEditor({
               if (m.type === "IE") {
                 const cx = m.x * activePage.width;
                 const cy = m.y * activePage.height;
-                const size = activePage.width * 0.008;
+                const size = activePage.width * 0.008 * markerScale;
                 const dotR = size * DOT_RADIUS_FACTOR;
                 return (
                   <g key={m.id}>
@@ -1156,7 +1384,7 @@ export default function MarkupEditor({
                       />
                     ))}
                     {selectedMarkerId === m.id && (
-                      <circle cx={cx} cy={cy} r={dotR * 1.5} fill="none" stroke="black" strokeWidth={outlineWidth} />
+                      <SelectionHalo cx={cx} cy={cy} r={dotR * 1.7} w={outlineWidth} />
                     )}
                     <circle
                       cx={cx}
@@ -1218,47 +1446,221 @@ export default function MarkupEditor({
                 );
               }
               if (m.type === "NOTE") {
-                const cx = m.x * activePage.width;
-                const cy = m.y * activePage.height;
-                const r = activePage.width * 0.004;
+                // A revision callout: a leader from the point being flagged to a
+                // text box carrying the revision wording, so the note is legible on
+                // the plan itself instead of only in the sidebar when selected.
+                // Deliberately NOT scaled by markerScale. This callout contains text
+                // and a stored box width, both of which have to match the printed
+                // output -- compensating for zoom made the box and its text drift
+                // apart as you zoomed. IE dots and Section flags still compensate,
+                // because they carry no text and benefit from a constant click target.
+                const unit = activePage.width * 0.004;
+                const tipX = m.x * activePage.width;
+                const tipY = m.y * activePage.height;
+                const boxPos = revisionBoxPosition(m);
+                const bx = boxPos.x * activePage.width;
+                const by = boxPos.y * activePage.height;
+
+                const fontSize = unit * 2.4;
+                const pad = unit * 1.7;
+                // Wider before it goes tall -- a narrow box turned any real sentence into
+                // a column. Line breaks in the note still control the shape directly.
+                // Helvetica metrics: identical on the server, in the browser and in
+                // the PDF, so the box wraps in the same places everywhere.
+                const measure = (t: string) => helveticaWidth(t, fontSize);
+                const maxTextW =
+                  m.boxWidth != null
+                    ? m.boxWidth * activePage.width - pad * 2
+                    : activePage.width * REVISION_TEXT_WIDTH;
+                const noteText = (m.note ?? "").trim();
+                const lines = noteText ? wrapToWidth(noteText, maxTextW, measure) : ["(add revision text)"];
+                const lineH = fontSize * 1.28;
+                // An explicit width wins; otherwise it is derived from the text, which
+                // is what every marker did before widths were storable.
+                // Fit to the widest line actually rendered, so no dead space is left.
+                const autoW = Math.max(...[m.label, ...lines].map(measure)) + pad * 2;
+                const boxW = m.boxWidth != null ? m.boxWidth * activePage.width : autoW;
+                const boxH = pad * 2 + lineH * (lines.length + 1);
+                const color = MARKER_TYPE_INFO.NOTE.color;
+                const selected = selectedMarkerId === m.id;
+
+                // Leader starts where the box's edge meets the line to the tip, so it
+                // touches the box rather than emerging from under its middle.
+                const bcx = bx + boxW / 2;
+                const bcy = by + boxH / 2;
+                const ddx = tipX - bcx;
+                const ddy = tipY - bcy;
+                const clip = Math.min(
+                  Math.abs(ddx) > 1e-6 ? boxW / 2 / Math.abs(ddx) : Infinity,
+                  Math.abs(ddy) > 1e-6 ? boxH / 2 / Math.abs(ddy) : Infinity
+                );
+                const edgeX = bcx + ddx * Math.min(1, clip);
+                const edgeY = bcy + ddy * Math.min(1, clip);
+                const ang = Math.atan2(tipY - edgeY, tipX - edgeX);
+                const ah = unit * 3.2;
+                const arrowPoints = [
+                  [tipX, tipY],
+                  [tipX - ah * Math.cos(ang - 0.42), tipY - ah * Math.sin(ang - 0.42)],
+                  [tipX - ah * Math.cos(ang + 0.42), tipY - ah * Math.sin(ang + 0.42)],
+                ]
+                  .map(([px, py]) => `${px},${py}`)
+                  .join(" ");
+
+                // Stop the leader at the arrowhead's base instead of running it to the
+                // tip -- drawn to the tip it showed through and around the head.
+                const headBack = ah * Math.cos(0.42);
+                const lineEndX = tipX - headBack * Math.cos(ang);
+                const lineEndY = tipY - headBack * Math.sin(ang);
+
+                const grab = {
+                  pointerEvents: locked ? ("none" as const) : ("auto" as const),
+                  cursor: locked ? undefined : "move",
+                };
+
                 return (
                   <g key={m.id}>
-                    {selectedMarkerId === m.id && (
-                      <circle cx={cx} cy={cy} r={r * 1.5} fill="none" stroke="black" strokeWidth={outlineWidth} />
-                    )}
-                    <circle
-                      cx={cx}
-                      cy={cy}
-                      r={r}
-                      fill={MARKER_TYPE_INFO.NOTE.color}
+                    {/* Black casing under the leader, matching the black outline the IE
+                        wedges and Section flags carry, so the callout holds up over dark
+                        linework instead of disappearing into it. */}
+                    <line
+                      x1={edgeX}
+                      y1={edgeY}
+                      x2={lineEndX}
+                      y2={lineEndY}
+                      stroke="black"
+                      strokeWidth={activePage.width * MARKER_LINE_FACTOR * markerScale + outlineWidth * 2}
+                    />
+                    <line
+                      x1={edgeX}
+                      y1={edgeY}
+                      x2={lineEndX}
+                      y2={lineEndY}
+                      stroke={color}
+                      strokeWidth={activePage.width * MARKER_LINE_FACTOR * markerScale}
+                    />
+                    {/* The arrowhead is the drag handle -- a separate dot on top of it
+                        just obscured the very point the callout is aiming at. */}
+                    <polygon
+                      points={arrowPoints}
+                      fill={color}
                       stroke="black"
                       strokeWidth={outlineWidth}
-                      style={{
-                        pointerEvents: locked ? "none" : "auto",
-                        cursor: locked ? undefined : "move",
-                      }}
+                      strokeLinejoin="round"
+                      style={grab}
                       onPointerDown={(e) => handlePointPointerDown(e, m.id, "primary")}
                       onPointerMove={handleDragMove}
                       onPointerUp={handleDragEnd}
                     >
                       <title>{m.label}</title>
-                    </circle>
+                    </polygon>
+                    <rect
+                      x={bx}
+                      y={by}
+                      width={boxW}
+                      height={boxH}
+                      rx={unit * 0.8}
+                      fill="#ffffff"
+                      fillOpacity={0.95}
+                      stroke="black"
+                      strokeWidth={unit * 0.6 + outlineWidth * 2}
+                      style={{ pointerEvents: "none" }}
+                    />
+                    {selected && (
+                      /* Selection reads as a dashed ring outside the box. Dashing the
+                         border itself just exposed the black casing between dashes. */
+                      <rect
+                        x={bx - unit * 1.4}
+                        y={by - unit * 1.4}
+                        width={boxW + unit * 2.8}
+                        height={boxH + unit * 2.8}
+                        rx={unit * 1.4}
+                        fill="none"
+                        stroke="#111827"
+                        strokeWidth={outlineWidth * 2}
+                        strokeDasharray={`${unit * 1.6} ${unit * 1.2}`}
+                        style={{ pointerEvents: "none" }}
+                      />
+                    )}
+                    <rect
+                      x={bx}
+                      y={by}
+                      width={boxW}
+                      height={boxH}
+                      rx={unit * 0.8}
+                      fill="none"
+                      stroke={color}
+                      strokeWidth={unit * 0.6}
+                      style={grab}
+                      onPointerDown={(e) => handleRevisionBoxPointerDown(e, m.id)}
+                      onPointerMove={handleDragMove}
+                      onPointerUp={handleDragEnd}
+                    >
+                      <title>{m.label}</title>
+                    </rect>
                     <text
-                      x={cx}
-                      y={cy}
-                      fontSize={r * 1.3}
-                      textAnchor="middle"
-                      dominantBaseline="central"
-                      fill="white"
+                      x={bx + pad}
+                      y={by + pad + fontSize * 0.92}
+                      fontSize={fontSize}
+                      fontFamily={REVISION_FONT_FAMILY}
+                      fontWeight="bold"
+                      fill={color}
                       style={{ pointerEvents: "none" }}
                     >
-                      {noteNumber(m.label)}
+                      {m.label}
                     </text>
+                    {lines.map((ln, i) => (
+                      <text
+                        key={i}
+                        x={bx + pad}
+                        y={by + pad + lineH * (i + 1) + fontSize * 0.92}
+                        fontSize={fontSize}
+                        fontFamily={REVISION_FONT_FAMILY}
+                        fill={noteText ? "#111827" : "#9ca3af"}
+                        style={{ pointerEvents: "none" }}
+                      >
+                        {ln}
+                      </text>
+                    ))}
+                    {selected && !locked && (
+                      /* Width handle on the box's right edge. Drag to widen or narrow;
+                         the text re-wraps to fit. */
+                      <rect
+                        x={bx + boxW - unit * 0.8}
+                        y={by + boxH / 2 - unit * 2}
+                        width={unit * 1.6}
+                        height={unit * 4}
+                        rx={unit * 0.4}
+                        fill={color}
+                        stroke="black"
+                        strokeWidth={outlineWidth}
+                        style={{ cursor: "ew-resize", pointerEvents: "auto" }}
+                        onPointerDown={(e) => {
+                          e.stopPropagation();
+                          (e.target as Element).setPointerCapture(e.pointerId);
+                          setSelectedMarkerId(m.id);
+                          setDragTarget({ kind: "boxWidth", markerId: m.id, originX: bx });
+                        }}
+                        onPointerMove={handleDragMove}
+                        onPointerUp={handleDragEnd}
+                      />
+                    )}
                   </g>
                 );
               }
               return null;
             })}
+
+            {draft && draft.type === "NOTE" && (
+              <line
+                x1={draft.start.x * activePage.width}
+                y1={draft.start.y * activePage.height}
+                x2={draft.current.x * activePage.width}
+                y2={draft.current.y * activePage.height}
+                stroke={MARKER_TYPE_INFO.NOTE.color}
+                strokeDasharray="6 4"
+                strokeWidth={activePage.width * 0.004}
+              />
+            )}
 
             {draft && draft.type === "SECTION" && (
               <line
@@ -1287,7 +1689,14 @@ export default function MarkupEditor({
   const lockedBanner = locked && (
     <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-gray-300 bg-gray-50 px-3 py-2 text-sm text-gray-600 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-300">
       <span>This markup has been submitted and is now read-only.</span>
-      <DownloadPdfButton href={`/api/markup/${token}/pdf`} filenameFallback={`${project.name}.pdf`} />
+      <button
+        type="button"
+        onClick={handleReopen}
+        disabled={reopening}
+        className="rounded-md border border-gray-300 bg-white px-2 py-1 text-xs font-medium text-blue-700 hover:bg-gray-50 disabled:opacity-50 dark:border-gray-700 dark:bg-gray-900 dark:text-blue-500 dark:hover:bg-gray-800"
+      >
+        {reopening ? "Reopening..." : "Reopen for edits"}
+      </button>
     </div>
   );
 
@@ -1299,7 +1708,7 @@ export default function MarkupEditor({
             <p className="font-semibold">How to mark up this plan</p>
             <button
               type="button"
-              onClick={() => setHelpOpen(false)}
+              onClick={dismissHelp}
               title="Minimize"
               className="rounded-md px-1.5 py-0.5 text-blue-700 hover:bg-blue-100 dark:text-blue-300 dark:hover:bg-blue-900"
             >
@@ -1308,9 +1717,10 @@ export default function MarkupEditor({
           </div>
           <div className="px-3 pb-3">
           <ol className="list-decimal space-y-1 pl-4">
-            <li>Pick a marker type below: IE, Section, or Note.</li>
+            <li>Pick a marker type below: IE, Section, or Revision.</li>
             <li>
-              For IE or Note, click anywhere on the plan to place it. For Section, click and
+              For IE, click anywhere on the plan to place it. For Revision, click to place the
+              callout, or drag from the spot you mean to where its text box should sit. For Section, click and
               drag to draw the cut line.
             </li>
             <li>
@@ -1402,12 +1812,12 @@ export default function MarkupEditor({
       )}
 
       <div className="flex flex-col gap-1">
-        <span className={sectionHeadingClass}>Notes</span>
+        <span className={sectionHeadingClass}>Revisions</span>
         <button
           type="button"
-          title="Note"
+          title="Revision"
           onClick={() => toggleTool("NOTE")}
-          className={`${tileClass(selectedTool === "NOTE")} w-fit`}
+          className={`${tileClass(selectedTool === "NOTE")} mx-auto w-fit`}
         >
           <ToolIcon type="NOTE" size={64} />
         </button>
@@ -1423,7 +1833,7 @@ export default function MarkupEditor({
   const selectedMarkerPanel = selectedMarker && !locked && (
     <div
       ref={selectedMarkerPanelRef}
-      className="absolute top-3 left-3 max-w-xs rounded-md border border-gray-200 bg-white/95 p-3 text-sm shadow-md backdrop-blur-sm dark:border-gray-700 dark:bg-black/95"
+      className="rounded-md border border-gray-200 bg-gray-50 p-3 text-sm dark:border-gray-800 dark:bg-gray-900"
     >
       <div className="mb-2 flex items-center justify-between gap-2">
         <span className="font-semibold text-gray-900 dark:text-gray-100">{selectedMarker.label}</span>
@@ -1482,8 +1892,9 @@ export default function MarkupEditor({
       {selectedMarker.type === "NOTE" && (
         <textarea
           key={selectedMarker.id}
+          ref={noteInputRef}
           defaultValue={selectedMarker.note ?? ""}
-          placeholder="Add a note..."
+          placeholder="Describe the revision... (Enter for a line break)"
           onBlur={(e) => handleNoteChange(selectedMarker.id, e.target.value)}
           className="w-full rounded border px-2 py-1 dark:border-gray-700 dark:bg-black dark:text-gray-100"
           rows={2}
@@ -1494,7 +1905,12 @@ export default function MarkupEditor({
 
   const totalsPanel = (
     <div className="flex flex-col gap-1 text-sm text-gray-700 dark:text-gray-300">
-      <span className="font-medium text-gray-800 dark:text-gray-200">Project totals:</span>
+      <span className="flex items-center gap-2 font-medium text-gray-800 dark:text-gray-200">
+        Project totals:
+        {savedRecently && (
+          <span className="text-xs font-normal text-green-700 dark:text-emerald-500">Saved</span>
+        )}
+      </span>
       {MARKER_TYPES.map((type) => (
         <span key={type}>
           {COUNT_LABEL[type]}: {overallCounts[type]}
@@ -1522,13 +1938,28 @@ export default function MarkupEditor({
         >
           {resetting === "project" ? "Resetting..." : "Reset Project"}
         </button>
+        {confirmingSubmit && (
+          <p className="rounded-md border border-gray-300 bg-gray-50 px-3 py-2 text-xs text-gray-700 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300">
+            Submitting locks this markup — you won&apos;t be able to add or move markers
+            afterwards. You can reopen it yourself from this same link if you need
+            another pass.
+          </p>
+        )}
         <button
-          onClick={handleSubmit}
+          onClick={() => (confirmingSubmit ? handleSubmit() : setConfirmingSubmit(true))}
           disabled={submitting}
-          className="rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-50"
+          className="rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-gray-950 hover:bg-blue-700 disabled:opacity-50"
         >
-          {submitting ? "Submitting..." : "Submit"}
+          {submitting ? "Submitting..." : confirmingSubmit ? "Yes, submit and lock" : "Submit"}
         </button>
+        {confirmingSubmit && !submitting && (
+          <button
+            onClick={() => setConfirmingSubmit(false)}
+            className="rounded-md border border-gray-300 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 dark:hover:bg-gray-800"
+          >
+            Keep editing
+          </button>
+        )}
       </div>
     ));
 
@@ -1582,9 +2013,13 @@ export default function MarkupEditor({
         {lockedBanner}
 
         {toolPalette}
+        {/* Lives in the sidebar rather than floating over the plan -- as an overlay it
+            routinely covered the very marker you had just selected. */}
+        {selectedMarkerPanel}
 
         <div className="mt-auto flex flex-col gap-2 border-t pt-2 dark:border-gray-800">
           {totalsPanel}
+          <DownloadPdfButton href={`/api/markup/${token}/pdf`} filenameFallback={`${project.name}.pdf`} />
           {submitFooter}
         </div>
       </div>
@@ -1592,7 +2027,6 @@ export default function MarkupEditor({
       <div className="flex flex-1 flex-col p-0">
         <div className="relative flex-1">
           {canvasArea}
-          {selectedMarkerPanel}
           {helpBubble}
           {deletedToast && (
             <div className="absolute bottom-3 left-1/2 flex -translate-x-1/2 items-center gap-3 rounded-md border border-gray-300 bg-white px-3 py-2 text-sm shadow-md dark:border-gray-700 dark:bg-gray-900">

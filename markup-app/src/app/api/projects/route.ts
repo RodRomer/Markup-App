@@ -1,8 +1,11 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { saveFile } from "@/lib/storage";
+import { requireStaff } from "@/lib/staffAuth";
 
-export async function GET() {
+export async function GET(request: Request) {
+  const denied = requireStaff(request);
+  if (denied) return denied;
   const projects = await prisma.project.findMany({
     orderBy: { createdAt: "desc" },
     include: { documents: { include: { pages: { include: { markers: true } } } } },
@@ -152,6 +155,8 @@ async function handleFormDataBody(request: Request) {
 }
 
 export async function POST(request: Request) {
+  const denied = requireStaff(request);
+  if (denied) return denied;
   const contentType = request.headers.get("content-type") ?? "";
   if (contentType.includes("application/json")) {
     return handleJsonBody(request);
