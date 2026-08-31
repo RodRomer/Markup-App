@@ -8,7 +8,11 @@ export async function GET(request: Request) {
   if (denied) return denied;
   const projects = await prisma.project.findMany({
     orderBy: { createdAt: "desc" },
-    include: { documents: { include: { pages: { include: { markers: true } } } } },
+    include: {
+      documents: {
+        include: { pages: { include: { markers: { include: { directions: true } } } } },
+      },
+    },
   });
 
   return NextResponse.json(
@@ -21,6 +25,15 @@ export async function GET(request: Request) {
         createdAt: project.createdAt.toISOString(),
         markerCount: allMarkers.length,
         ieCount: allMarkers.filter((m) => m.type === "IE").length,
+        // Two different things have been called "IE". ieCount is the number of
+        // markers placed; this is the number of view directions those markers
+        // carry, which is what the client's running total multiplies by the
+        // price. One marker with three arrows is three elevations to draw and
+        // three to bill, so a staff screen showing only ieCount was showing a
+        // third of what the client is charged for.
+        ieViewCount: allMarkers
+          .filter((m) => m.type === "IE")
+          .reduce((total, m) => total + Math.max(1, m.directions.length), 0),
       };
     })
   );

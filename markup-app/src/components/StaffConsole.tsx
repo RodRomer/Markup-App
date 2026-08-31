@@ -19,6 +19,8 @@ type Project = {
   createdAt: string;
   markerCount?: number;
   ieCount?: number;
+  /** View directions, not markers -- what a price is multiplied by. */
+  ieViewCount?: number;
 };
 
 type Detail = Project & {
@@ -413,7 +415,9 @@ export default function StaffConsole() {
               <span className="shrink-0 text-xs text-[#8c8c8c]">{project.status}</span>
             </div>
             <span className="text-xs text-[#8c8c8c]">
-              {project.ieCount ?? 0} IE &middot; {project.markerCount ?? 0} markers
+              {project.ieCount ?? 0} IE marker{project.ieCount === 1 ? "" : "s"} &middot;{" "}
+              {project.ieViewCount ?? 0} view{project.ieViewCount === 1 ? "" : "s"} &middot;{" "}
+              {project.markerCount ?? 0} marker{project.markerCount === 1 ? "" : "s"} total
             </span>
           </button>
         ))}
