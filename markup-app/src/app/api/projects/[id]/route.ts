@@ -39,12 +39,29 @@ export async function PATCH(
   const { id } = await params;
   const body = await request.json();
 
-  const data: { allowIE?: boolean; allowSection?: boolean } = {};
+  const data: { allowIE?: boolean; allowSection?: boolean; pricePerIE?: number | null } = {};
   if (typeof body.allowIE === "boolean") data.allowIE = body.allowIE;
   if (typeof body.allowSection === "boolean") data.allowSection = body.allowSection;
 
+  // Three states, and they have to stay three. Absent leaves the price alone;
+  // null clears it, so the client sees no pricing at all; 0 is a stated
+  // allowance of nothing and shows as one. Collapsing null and 0 here would
+  // make "free" and "not priced" the same thing on the client's screen.
+  if (body.pricePerIE === null) {
+    data.pricePerIE = null;
+  } else if (typeof body.pricePerIE === "number") {
+    if (!Number.isFinite(body.pricePerIE) || body.pricePerIE < 0) {
+      return NextResponse.json({ error: "pricePerIE must be zero or more" }, { status: 400 });
+    }
+    data.pricePerIE = body.pricePerIE;
+  }
+
   const project = await prisma.project.update({ where: { id }, data });
-  return NextResponse.json({ allowIE: project.allowIE, allowSection: project.allowSection });
+  return NextResponse.json({
+    allowIE: project.allowIE,
+    allowSection: project.allowSection,
+    pricePerIE: project.pricePerIE,
+  });
 }
 
 export async function DELETE(

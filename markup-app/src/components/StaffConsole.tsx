@@ -54,6 +54,7 @@ export default function StaffConsole() {
   const [busy, setBusy] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
+  const [priceDraft, setPriceDraft] = useState("");
 
   useEffect(() => setKey(readStoredKey()), []);
 
@@ -231,6 +232,50 @@ export default function StaffConsole() {
           ))}
         </div>
 
+        <div className="mt-5 flex items-center gap-2">
+          <label className="text-sm text-[#b2b2b2]" htmlFor="price">
+            Price per IE
+          </label>
+          <input
+            id="price"
+            value={priceDraft}
+            onChange={(e) => setPriceDraft(e.target.value)}
+            placeholder="none"
+            inputMode="decimal"
+            className="w-28 rounded-lg border border-[#474747] bg-[#1f1f1f] px-3 py-2 text-sm text-[#f2f2f2] placeholder:text-[#6a6a6a]"
+          />
+          <button
+            className={BTN}
+            disabled={busy !== null}
+            onClick={() =>
+              void act("price", async () => {
+                // Blank clears it: the client then sees no pricing at all,
+                // which is a different thing from a price of zero.
+                const raw = priceDraft.trim().replace(/^\$/, "").replace(/,/g, "");
+                let next: number | null = null;
+                if (raw !== "") {
+                  const parsed = Number(raw);
+                  if (!Number.isFinite(parsed) || parsed < 0) {
+                    throw new Error("'" + priceDraft.trim() + "' isn't a price.");
+                  }
+                  next = parsed;
+                }
+                const res = await call("/api/projects/" + detail.id, {
+                  method: "PATCH",
+                  headers: { "content-type": "application/json" },
+                  body: JSON.stringify({ pricePerIE: next }),
+                });
+                const saved = await res.json();
+                setPriceDraft(saved.pricePerIE === null ? "" : String(saved.pricePerIE));
+                setDetail({ ...detail, pricePerIE: saved.pricePerIE });
+              })
+            }
+          >
+            {busy === "price" ? "Saving…" : "Save"}
+          </button>
+          <span className="text-xs text-[#8c8c8c]">blank shows the client no pricing</span>
+        </div>
+
         <div className="mt-5 flex flex-wrap gap-2">
           <a href={"/api/projects/" + detail.id + "/pdf"} className={BTN}>
             Download PDF
@@ -355,7 +400,9 @@ export default function StaffConsole() {
             onClick={() =>
               void act("open-" + project.id, async () => {
                 const res = await call("/api/projects/" + project.id);
-                setDetail(await res.json());
+                const loaded: Detail = await res.json();
+                setPriceDraft(loaded.pricePerIE === null ? "" : String(loaded.pricePerIE));
+                setDetail(loaded);
               })
             }
           >
