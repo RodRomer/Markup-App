@@ -6,13 +6,20 @@ export const MARKER_TYPE_INFO: Record<
   MarkerType,
   { label: string; shortLabel: string; color: string }
 > = {
-  // Light/print ramp: magenta 320, blue 220, red 356. Hues chosen for the best
-  // worst-case separation -- IE sits dE 65 from Section and dE 59 from Revision,
-  // where a violet IE would have been only dE 35 from Section blue. They are
-  // near-identical in greyscale though, so a photocopied plan is legible only
-  // because the SHAPES differ -- wedge-armed dot, flagged line, boxed callout.
-  // Keep that in mind before simplifying any marker geometry.
-  IE: { label: "IE", shortLabel: "IE", color: "#b81e85" },
+  // Light/print ramp: gold 45, blue 220, red 356. Hues chosen for the best
+  // worst-case separation -- IE sits dE 145 from Section and dE 68 from Revision
+  // (CIE76), so its closest neighbour is further off than the magenta it replaced,
+  // which sat at dE 59. They are near-identical in greyscale though, so a
+  // photocopied plan is legible only because the SHAPES differ -- wedge-armed dot,
+  // flagged line, boxed callout. Keep that in mind before simplifying any marker
+  // geometry.
+  //
+  // Gold is much lighter than the other two -- 2.4:1 against a white plan where
+  // they are around 5:1 -- so it is the one colour here that would be hard to
+  // pick out unoutlined. Every marker part is drawn stroked black at a shared
+  // outline weight, which is what defines the edge; do not drop that stroke for
+  // IE without revisiting this.
+  IE: { label: "IE", shortLabel: "IE", color: "#d4a017" },
   SECTION: { label: "Section", shortLabel: "S", color: "#2466eb" },
   // Red by drafting convention for revisions.
   NOTE: { label: "Revision", shortLabel: "R", color: "#d3222e" },

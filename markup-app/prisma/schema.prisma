@@ -19,6 +19,10 @@ model Project {
   status       String    @default("draft") // draft | sent | submitted
   allowIE      Boolean   @default(true)
   allowSection Boolean   @default(true)
+  // Optional. When set, the client sees a running total for the IEs they place:
+  // count x this. Null means the project simply does not show pricing, which is
+  // different from a price of 0 -- so nullable rather than defaulted.
+  pricePerIE   Float?
   createdAt    DateTime  @default(now())
   documents    Document[]
 }

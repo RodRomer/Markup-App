@@ -89,6 +89,18 @@ const HELP_DISMISSED_KEY = "markup.helpDismissed";
 
 const COUNT_LABEL: Record<MarkerType, string> = { IE: "IE", SECTION: "Section", NOTE: "Revision" };
 
+/** Money as the client will read it. Intl rather than toFixed so a thousands
+ *  separator appears, and USD because that is what these projects are priced in;
+ *  it is the one place to change if that stops being true. */
+function formatMoney(amount: number): string {
+  return new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: "USD",
+    minimumFractionDigits: Number.isInteger(amount) ? 0 : 2,
+    maximumFractionDigits: 2,
+  }).format(amount);
+}
+
 function emptyCounts(): Record<MarkerType, number> {
   return { IE: 0, SECTION: 0, NOTE: 0 };
 }
@@ -1934,6 +1946,20 @@ export default function MarkupEditor({
           {COUNT_LABEL[type]}: {overallCounts[type]}
         </span>
       ))}
+      {/* Only when the project carries a price. Null means this project shows no
+          pricing at all, which is why zero still renders -- a free allowance is a
+          deliberate thing to state, not the same as saying nothing. The figure
+          updates as markers are placed, because overallCounts already does.
+          It multiplies the IE count shown directly above, which counts view
+          directions rather than dots, so the arithmetic on screen is checkable. */}
+      {project.pricePerIE !== null && (
+        <span className="mt-1 border-t pt-1 font-medium text-gray-900 dark:border-gray-800 dark:text-gray-100">
+          IE total: {formatMoney(overallCounts.IE * project.pricePerIE)}
+          <span className="ml-1 font-normal text-xs text-gray-600 dark:text-gray-400">
+            ({overallCounts.IE} x {formatMoney(project.pricePerIE)})
+          </span>
+        </span>
+      )}
     </div>
   );
 

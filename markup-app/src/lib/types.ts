@@ -33,6 +33,9 @@ export type ProjectData = {
   status: string;
   allowIE: boolean;
   allowSection: boolean;
+  /** Null means this project shows no pricing at all, which is a different
+   *  thing from a price of zero. */
+  pricePerIE: number | null;
   pages: PageData[];
 };
 
@@ -76,6 +79,7 @@ type ProjectWithRelations = {
   status: string;
   allowIE: boolean;
   allowSection: boolean;
+  pricePerIE: number | null;
   documents: {
     kind: string;
     pages: {
@@ -113,6 +117,7 @@ export function toProjectData(project: ProjectWithRelations): ProjectData {
     status: project.status,
     allowIE: project.allowIE,
     allowSection: project.allowSection,
+    pricePerIE: project.pricePerIE,
     pages,
   };
 }

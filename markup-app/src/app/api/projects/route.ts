@@ -34,10 +34,11 @@ async function createProjectAndDocument(
   kind: string,
   originalFilename: string,
   allowIE: boolean,
+  pricePerIE: number | null,
   allowSection: boolean
 ) {
   const project = await prisma.project.create({
-    data: { name: name.trim(), status: "sent", allowIE, allowSection },
+    data: { name: name.trim(), status: "sent", allowIE, allowSection, pricePerIE },
   });
   const document = await prisma.document.create({
     data: { projectId: project.id, originalFilename, kind },
@@ -50,11 +51,13 @@ async function createProjectAndDocument(
 // serverless request-body size limit entirely.
 async function handleJsonBody(request: Request) {
   const body = await request.json();
-  const { name, kind, originalFilename, allowIE = true, allowSection = true, pages } = body as {
+  const { name, kind, originalFilename, allowIE = true, allowSection = true,
+          pricePerIE = null, pages } = body as {
     name?: string;
     kind?: string;
     originalFilename?: string;
     allowIE?: boolean;
+    pricePerIE?: number | null;
     allowSection?: boolean;
     pages?: UploadedPage[];
   };
@@ -75,6 +78,7 @@ async function handleJsonBody(request: Request) {
     kind,
     originalFilename,
     allowIE,
+    pricePerIE,
     allowSection
   );
 
@@ -104,6 +108,11 @@ async function handleFormDataBody(request: Request) {
   const metaRaw = formData.get("meta");
   const allowIE = formData.get("allowIE") !== "false";
   const allowSection = formData.get("allowSection") !== "false";
+  // Absent, blank or unparseable all mean "this project shows no pricing".
+  // Zero is a real answer and is kept, which is why this is not `|| null`.
+  const priceRaw = formData.get("pricePerIE");
+  const priceNum = typeof priceRaw === "string" && priceRaw.trim() !== "" ? Number(priceRaw) : NaN;
+  const pricePerIE = Number.isFinite(priceNum) && priceNum >= 0 ? priceNum : null;
 
   if (
     typeof name !== "string" ||
@@ -125,6 +134,7 @@ async function handleFormDataBody(request: Request) {
     kind,
     originalFilename,
     allowIE,
+    pricePerIE,
     allowSection
   );
 
