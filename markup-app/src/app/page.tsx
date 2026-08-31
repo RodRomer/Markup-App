@@ -1,5 +1,7 @@
 import type { Metadata } from "next";
 
+import StaffConsole from "@/components/StaffConsole";
+
 export const metadata: Metadata = {
   title: "Rune",
   description: "Client markup links for as-built drawings.",
@@ -29,9 +31,10 @@ function RuneMark() {
   );
 }
 
-// Deliberately not a dashboard. Projects are created and managed in Waystone;
-// this page exists so the bare deployment URL says what it is rather than
-// 404ing or redirecting somewhere that no longer exists.
+// The staff console, for when the desktop app is not to hand: the same actions
+// Waystone's Rune tab offers, behind the same shared key. Everything below the
+// key prompt is client-side, because the key belongs to the person rather than
+// the server -- this page is on a public address.
 export default function Home() {
   return (
     <main className="flex min-h-screen items-center justify-center bg-[#171717] p-6 font-[system-ui,'Segoe_UI',sans-serif] text-[#f2f2f2]">
@@ -44,20 +47,12 @@ export default function Home() {
           </div>
         </div>
 
-        <div className="rounded-[10px] border border-[#2e2e2e] bg-[#242424] p-6">
-          <h2 className="mb-3 text-[11px] font-bold uppercase tracking-[0.9px] text-[#8c8c8c]">
-            No dashboard here
-          </h2>
-          <p className="text-sm leading-relaxed text-[#b2b2b2]">
-            Projects are created and managed in Waystone, on your desktop. This address serves
-            the review links themselves &mdash; each client gets their own, and it opens the plan
-            for them directly.
-          </p>
-          <p className="mt-4 text-sm leading-relaxed text-[#b2b2b2]">
-            If you were sent a link and it brought you here instead of a drawing, the address is
-            probably incomplete &mdash; ask whoever sent it for the full one.
-          </p>
-        </div>
+        <StaffConsole />
+
+        <p className="mt-4 text-sm leading-relaxed text-[#8c8c8c]">
+          Sent a link and landed here instead of a drawing? The address is probably incomplete
+          &mdash; ask whoever sent it for the full one.
+        </p>
 
         <div className="mt-4 rounded-[10px] border border-[#2e2e2e] bg-[#242424] p-6">
           <h2 className="mb-3 text-[11px] font-bold uppercase tracking-[0.9px] text-[#8c8c8c]">
