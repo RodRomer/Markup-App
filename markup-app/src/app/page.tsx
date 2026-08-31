@@ -47,12 +47,19 @@ export default function Home() {
           </div>
         </div>
 
-        <StaffConsole />
+        {/* Above the staff console on purpose. Most people who reach the bare
+            address are clients whose link got truncated, and meeting a password
+            box first reads as "you need an account here", which they do not. */}
+        <div className="mb-4 rounded-[10px] border border-[#2e2e2e] bg-[#242424] p-5">
+          <p className="text-sm leading-relaxed text-[#b2b2b2]">
+            <span className="font-semibold text-[#f2f2f2]">Were you sent a link to mark up a
+            drawing?</span>{" "}
+            This address on its own does not open one &mdash; the link you were given has more
+            after it. Ask whoever sent it for the full address.
+          </p>
+        </div>
 
-        <p className="mt-4 text-sm leading-relaxed text-[#8c8c8c]">
-          Sent a link and landed here instead of a drawing? The address is probably incomplete
-          &mdash; ask whoever sent it for the full one.
-        </p>
+        <StaffConsole />
 
         <div className="mt-4 rounded-[10px] border border-[#2e2e2e] bg-[#242424] p-6">
           <h2 className="mb-3 text-[11px] font-bold uppercase tracking-[0.9px] text-[#8c8c8c]">
