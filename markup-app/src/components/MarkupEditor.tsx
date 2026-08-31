@@ -19,6 +19,7 @@ import {
   snapToCommonAngle,
   toSvgPoints,
 } from "@/lib/markerGeometry";
+import { formatMoney } from "@/lib/money";
 import type { MarkerData, ProjectData } from "@/lib/types";
 import DownloadPdfButton from "./DownloadPdfButton";
 
@@ -88,18 +89,6 @@ const MARKER_LINE_FACTOR = 0.0022;
 const HELP_DISMISSED_KEY = "markup.helpDismissed";
 
 const COUNT_LABEL: Record<MarkerType, string> = { IE: "IE", SECTION: "Section", NOTE: "Revision" };
-
-/** Money as the client will read it. Intl rather than toFixed so a thousands
- *  separator appears, and USD because that is what these projects are priced in;
- *  it is the one place to change if that stops being true. */
-function formatMoney(amount: number): string {
-  return new Intl.NumberFormat("en-US", {
-    style: "currency",
-    currency: "USD",
-    minimumFractionDigits: Number.isInteger(amount) ? 0 : 2,
-    maximumFractionDigits: 2,
-  }).format(amount);
-}
 
 function emptyCounts(): Record<MarkerType, number> {
   return { IE: 0, SECTION: 0, NOTE: 0 };

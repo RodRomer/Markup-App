@@ -2,6 +2,8 @@
 
 import { useCallback, useEffect, useState } from "react";
 
+import { formatMoney } from "@/lib/money";
+
 /** Projects, and what can be done to one -- the same actions Waystone's Rune
  *  tab offers, for when the desktop app is not to hand.
  *
@@ -182,7 +184,7 @@ export default function StaffConsole() {
         <p className="mt-1 text-sm text-[#b2b2b2]">
           {detail.status} &middot; {detail.pages.length} page
           {detail.pages.length === 1 ? "" : "s"}
-          {detail.pricePerIE !== null ? " · $" + detail.pricePerIE + " per IE" : ""}
+          {detail.pricePerIE !== null ? " · " + formatMoney(detail.pricePerIE) + " per IE" : ""}
         </p>
 
         <div className="mt-5 flex gap-2">
