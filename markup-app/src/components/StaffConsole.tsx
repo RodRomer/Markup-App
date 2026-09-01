@@ -100,10 +100,12 @@ export default function StaffConsole() {
         // not what was copied -- truncated, padded, or a different value
         // entirely -- and "Not authorised" alone gives no way to tell.
         if (res.status === 401 || res.status === 403) {
-          throw new Error(
+          const rejected = new Error(
             message + " — the key this page sent was " + key.length +
             " characters. If that is not the length of your key, what reached the " +
             "box is not what you copied.");
+          rejected.name = "KeyRejected";
+          throw rejected;
         }
         throw new Error(message);
       }
@@ -122,9 +124,24 @@ export default function StaffConsole() {
       // Cleared, so a stale list cannot sit there looking current under an error.
       setProjects(null);
       const message = e instanceof Error ? e.message : String(e);
+      // A refused key must not stick. It is stored the moment it is entered, and
+      // a stored key sends this straight to the list view -- so the input box
+      // disappears and every reload lands back here with no way to type another.
+      // Dropping it returns the prompt, with the reason still on screen.
+      if (e instanceof Error && e.name === "KeyRejected") {
+        try {
+          sessionStorage.removeItem(KEY_STORE);
+        } catch {
+          /* nothing stored to remove */
+        }
+        setKey("");
+        setError(message);
+        return;
+      }
       // A TypeError from fetch means the request never reached the server at
       // all -- offline, blocked, an extension. That needs a different fix from
-      // a key the server refused, and the two read identically otherwise.
+      // a key the server refused, and the two read identically otherwise. The
+      // key is kept: it may well be right and the network wrong.
       setError(e instanceof TypeError
         ? "The request never reached the server (" + message + "). That is a " +
           "connection or browser problem rather than the key."
