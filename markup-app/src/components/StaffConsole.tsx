@@ -33,6 +33,24 @@ type Detail = Project & {
 
 const KEY_STORE = "rune.staffKey";
 
+/** Why a pasted value cannot be the key, or null if it looks plausible.
+ *
+ *  Waystone's own key field is seeded with bullet characters standing in for a
+ *  key already saved -- the real value is never echoed back out of the
+ *  registry. The field looks entirely copyable, so copying from there and
+ *  pasting here is the obvious mistake to make, and "Not authorised" would not
+ *  hint at it. */
+function whyNotAKey(value: string): string | null {
+  if (/^[•*●·]+$/.test(value)) {
+    return "That is the row of dots Waystone shows in place of a saved key, not the key itself. " +
+      "The value is only readable from the Windows environment variable MARKUP_STAFF_KEY.";
+  }
+  if (value.includes(" ")) {
+    return "That contains a space, so it is probably not the key.";
+  }
+  return null;
+}
+
 function readStoredKey(): string {
   try {
     return sessionStorage.getItem(KEY_STORE) ?? "";
@@ -121,6 +139,13 @@ export default function StaffConsole() {
 
   function saveKey() {
     const trimmed = typedKey.trim();
+    const wrong = whyNotAKey(trimmed);
+    if (wrong) {
+      // Caught before it is stored, so the next reload does not retry it.
+      setError(wrong);
+      return;
+    }
+    setError(null);
     try {
       sessionStorage.setItem(KEY_STORE, trimmed);
     } catch {
@@ -152,6 +177,7 @@ export default function StaffConsole() {
           The same key Waystone uses under Settings &rsaquo; Connections. Kept for this tab only,
           and forgotten when you close it.
         </p>
+        {error && <p className="mb-3 text-sm text-[#f78645]">{error}</p>}
         <div className="flex gap-2">
           <input
             type="password"
