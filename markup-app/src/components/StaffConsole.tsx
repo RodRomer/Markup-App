@@ -96,8 +96,14 @@ export default function StaffConsole() {
         }
         // A key IS set, so 401/403 means it is the wrong one rather than absent.
         // Waystone draws the same distinction, because the two need different fixes.
+        // The length is included because the usual cause is that what arrived is
+        // not what was copied -- truncated, padded, or a different value
+        // entirely -- and "Not authorised" alone gives no way to tell.
         if (res.status === 401 || res.status === 403) {
-          throw new Error(message + " — this key was rejected.");
+          throw new Error(
+            message + " — the key this page sent was " + key.length +
+            " characters. If that is not the length of your key, what reached the " +
+            "box is not what you copied.");
         }
         throw new Error(message);
       }
@@ -115,7 +121,14 @@ export default function StaffConsole() {
     } catch (e) {
       // Cleared, so a stale list cannot sit there looking current under an error.
       setProjects(null);
-      setError(e instanceof Error ? e.message : String(e));
+      const message = e instanceof Error ? e.message : String(e);
+      // A TypeError from fetch means the request never reached the server at
+      // all -- offline, blocked, an extension. That needs a different fix from
+      // a key the server refused, and the two read identically otherwise.
+      setError(e instanceof TypeError
+        ? "The request never reached the server (" + message + "). That is a " +
+          "connection or browser problem rather than the key."
+        : message);
     }
   }, [call, key]);
 
