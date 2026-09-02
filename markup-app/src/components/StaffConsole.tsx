@@ -208,16 +208,44 @@ export default function StaffConsole() {
           and forgotten when you close it.
         </p>
         {error && <p className="mb-3 text-sm text-[#f78645]">{error}</p>}
+        {/* Said before Continue is pressed, not only after a refusal. The usual
+            cause of a rejected key is that what is in the box is not what was
+            copied, and a count is the quickest way to see that. */}
+        {typedKey.length > 0 && (
+          <p className="mb-2 text-xs text-[#8c8c8c]">
+            {typedKey.trim().length} characters
+            {typedKey !== typedKey.trim() ? " (and some space around them, which will be trimmed)" : ""}
+          </p>
+        )}
         <div className="flex gap-2">
           <input
-            type="password"
+            // Not type="password", and deliberately so. A masked box cannot be
+            // checked: the key you pasted and the key your browser filled in
+            // for you look identical as dots, which is exactly the confusion
+            // this field kept producing. The value is a shared key copied out
+            // of a Windows environment variable the person can already read,
+            // so hiding it buys nothing and costs the ability to see that what
+            // is in the box is what was copied.
+            type="text"
+            // A lone password field on a public address is what a browser's
+            // password manager treats as a sign-in form: it offers to save
+            // whatever is typed and refills it on every later visit, over the
+            // top of a paste. Named, spell-check off, and opted out of every
+            // manager that honours one of these.
+            name="rune-staff-key"
+            autoComplete="off"
+            autoCorrect="off"
+            spellCheck={false}
+            data-1p-ignore
+            data-lpignore="true"
+            data-form-type="other"
             value={typedKey}
             onChange={(e) => setTypedKey(e.target.value)}
             onKeyDown={(e) => {
               if (e.key === "Enter") saveKey();
             }}
             placeholder="paste the key"
-            className="flex-1 rounded-lg border border-[#474747] bg-[#1f1f1f] px-3 py-2 text-sm text-[#f2f2f2] placeholder:text-[#6a6a6a]"
+            className="flex-1 rounded-lg border border-[#474747] bg-[#1f1f1f] px-3 py-2 font-mono text-sm text-[#f2f2f2] placeholder:text-[#6a6a6a] placeholder:font-sans"
           />
           <button onClick={saveKey} disabled={!typedKey.trim()} className={PRIMARY}>
             Continue
