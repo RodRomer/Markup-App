@@ -236,6 +236,10 @@ export default function MarkupEditor({
   const [submitting, setSubmitting] = useState(false);
   const [resetting, setResetting] = useState<"page" | "project" | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // Set once anything fails to reach the server, and never cleared: the edit
+  // is already drawn on screen, so from that moment this view and the stored
+  // markup disagree and only a reload can say by how much.
+  const [saveFailed, setSaveFailed] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const outerRef = useRef<HTMLDivElement>(null);
   const ribbonRef = useRef<HTMLDivElement>(null);
@@ -446,7 +450,12 @@ export default function MarkupEditor({
       if (!res.ok) throw new Error("Failed to save change");
       markSaved();
     } catch {
-      setError("Couldn't save that change. Check your connection and try again.");
+      // The marker is already where it was dragged. Nothing puts it back, so
+      // the screen now shows something the server does not have -- which is
+      // why submitting is blocked until the page has been reloaded.
+      setSaveFailed(true);
+      setError("Couldn't save that change, so it is not stored. Check your connection, "
+               + "then reload this page to see what was saved.");
     }
   }
 
@@ -1012,6 +1021,16 @@ export default function MarkupEditor({
   }
 
   async function handleSubmit() {
+    // Submitting locks the markup and is what tells the drafter it is ready. A
+    // change that never reached the server is still drawn on screen, so
+    // submitting now would lock a markup that does not match what was marked
+    // up -- and it would look exactly like one that does.
+    if (saveFailed) {
+      setConfirmingSubmit(false);
+      setError("Some changes didn't save, so this isn't what's stored. Reload the page "
+               + "to see what was saved, redo anything missing, then submit.");
+      return;
+    }
     setSubmitting(true);
     setError(null);
     try {
