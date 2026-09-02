@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
+import { resetScopeFrom } from "@/lib/resetScope";
 
 export async function POST(
   request: Request,
@@ -12,14 +13,22 @@ export async function POST(
     return NextResponse.json({ error: "Project not found" }, { status: 404 });
   }
 
-  const body = await request.json().catch(() => ({}));
-  const pageId: string | undefined = body?.pageId;
+  // request.text(), not request.json() -- a body that fails to parse has to be
+  // distinguishable from a body that asked for everything, and .json().catch()
+  // made them the same thing. See lib/resetScope.
+  const scope = resetScopeFrom(await request.text());
+  if (scope.kind === "invalid") {
+    return NextResponse.json({ error: scope.reason }, { status: 400 });
+  }
 
-  await prisma.marker.deleteMany({
-    where: pageId
-      ? { pageId, page: { document: { projectId: project.id } } }
-      : { page: { document: { projectId: project.id } } },
+  const inThisProject = { page: { document: { projectId: project.id } } };
+  const { count } = await prisma.marker.deleteMany({
+    where: scope.kind === "page"
+      ? { pageId: scope.pageId, ...inThisProject }
+      : inThisProject,
   });
 
-  return NextResponse.json({ ok: true });
+  // The caller is told which of the two things happened and how much went,
+  // so "reset this page" quietly clearing the project cannot pass unnoticed.
+  return NextResponse.json({ ok: true, scope: scope.kind, deleted: count });
 }

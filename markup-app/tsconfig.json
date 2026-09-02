@@ -11,6 +11,9 @@
     "moduleResolution": "bundler",
     "resolveJsonModule": true,
     "isolatedModules": true,
+    // tests/ is run by Node's own runner, which resolves real files and so
+    // needs the .ts on the import. Nothing is emitted, so this is free.
+    "allowImportingTsExtensions": true,
     "jsx": "react-jsx",
     "incremental": true,
     "plugins": [

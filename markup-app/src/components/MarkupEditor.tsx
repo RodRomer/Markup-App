@@ -1033,13 +1033,22 @@ export default function MarkupEditor({
         ? "Delete all markers on this page? This can't be undone."
         : "Delete all markers across every page? This can't be undone.";
     if (!window.confirm(confirmText)) return;
+    // Without a page there is no page reset to make. This used to fall through
+    // to `{}`, which the server read as "clear every page" -- a bigger and
+    // irreversible action than the one just confirmed.
+    if (scope === "page" && !activePage) {
+      setError("No page is open, so there is nothing to reset.");
+      return;
+    }
     setResetting(scope);
     setError(null);
     try {
       const res = await fetch(`/api/markup/${token}/reset`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(scope === "page" && activePage ? { pageId: activePage.id } : {}),
+        body: JSON.stringify(
+          scope === "page" ? { scope, pageId: activePage!.id } : { scope }
+        ),
       });
       if (!res.ok) throw new Error("Failed to reset markers");
       if (scope === "page" && activePage) {
