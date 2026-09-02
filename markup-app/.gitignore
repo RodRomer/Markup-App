@@ -49,3 +49,9 @@ next-env.d.ts
 
 .vercel
 .env*
+
+# .env* is listed twice above (line 34 from the Next.js defaults, and again
+# lower down). This negation has to sit after both of them to take effect.
+# The template of key NAMES is meant to be committed -- it carries no values,
+# it is the list of what a fresh clone has to fill in.
+!.env.example
