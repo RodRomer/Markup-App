@@ -122,3 +122,19 @@ export function wrapToWidth(
   while (out.length && !out[out.length - 1]) out.pop();
   return out;
 }
+
+/** What to say about a page whose plan image would not load, or null.
+ *
+ * A page that failed to load and a page that is genuinely blank are the same
+ * empty rectangle on screen, and the marker tools stay live over both -- so
+ * someone can mark up a plan they never actually saw, submit it, and the
+ * drafter reads markers positioned against nothing.
+ */
+export function pageImageProblem(
+  page: { id: string; pageNumber: number } | null | undefined,
+  unloadable: readonly string[]
+): string | null {
+  if (!page || !unloadable.includes(page.id)) return null;
+  return `Page ${page.pageNumber} didn't load, so this is not the plan -- don't ` +
+    `mark it up. Reload the page; if it still fails, tell whoever sent you the link.`;
+}

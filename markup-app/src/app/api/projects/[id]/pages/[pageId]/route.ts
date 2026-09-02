@@ -33,8 +33,6 @@ export async function DELETE(
     );
   }
 
-  await deleteFile(page.imagePath.replace(/^\/uploads\//, ""));
-
   const remaining = allPages
     .filter((p) => p.id !== pageId)
     .sort((a, b) => a.pageNumber - b.pageNumber);
@@ -45,6 +43,13 @@ export async function DELETE(
       prisma.page.update({ where: { id: p.id }, data: { pageNumber: i + 1 } })
     ),
   ]);
+
+  // After the row is gone, not before. This used to run first, so a transaction
+  // that failed left the page in the database pointing at a file that no longer
+  // existed -- and a page whose image will not load looks exactly like a blank
+  // sheet to the client marking it up. deleteFile swallows its own failures, so
+  // the worst this order can leave behind is a file nobody references.
+  await deleteFile(page.imagePath.replace(/^\/uploads\//, ""));
 
   return NextResponse.json({ ok: true });
 }

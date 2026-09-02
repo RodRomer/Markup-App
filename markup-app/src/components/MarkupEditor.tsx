@@ -2,14 +2,15 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
-  MARKER_TYPES,
-  MARKER_TYPE_INFO,
   defaultRevisionBox,
-  revisionBoxPosition,
   helveticaWidth,
+  MARKER_TYPE_INFO,
+  MARKER_TYPES,
+  pageImageProblem,
   REVISION_FONT_FAMILY,
-  wrapToWidth,
+  revisionBoxPosition,
   type MarkerType,
+  wrapToWidth,
 } from "@/lib/markerTypes";
 import {
   arrowTipPoint,
@@ -232,6 +233,10 @@ export default function MarkupEditor({
   // is already drawn on screen, so from that moment this view and the stored
   // markup disagree and only a reload can say by how much.
   const [saveFailed, setSaveFailed] = useState(false);
+  // Pages whose plan image would not load. A page that failed to load and a
+  // page that is genuinely blank are the same empty rectangle on screen, and
+  // markers placed on the second are markers placed on nothing.
+  const [unloadablePages, setUnloadablePages] = useState<string[]>([]);
   const containerRef = useRef<HTMLDivElement>(null);
   const outerRef = useRef<HTMLDivElement>(null);
   const ribbonRef = useRef<HTMLDivElement>(null);
@@ -1269,7 +1274,16 @@ export default function MarkupEditor({
             src={activePage.imagePath}
             alt={`Page ${activePage.pageNumber}`}
             draggable={false}
-            onLoad={() => setPan(centerPan(zoom))}
+            onLoad={() => {
+              setUnloadablePages((ids) => ids.filter((id) => id !== activePage.id));
+              setPan(centerPan(zoom));
+            }}
+            // Without this a plan that 404s is an empty rectangle with the
+            // marker tools still live over it.
+            onError={() =>
+              setUnloadablePages((ids) =>
+                ids.includes(activePage.id) ? ids : [...ids, activePage.id])
+            }
             className="block"
             style={{ width: baseWidth }}
           />
@@ -1719,6 +1733,12 @@ export default function MarkupEditor({
     </div>
   );
 
+  const imageBanner = pageImageProblem(activePage, unloadablePages) && (
+    <div className="rounded-md border border-gray-300 bg-gray-50 px-3 py-2 text-sm text-[#f78645] dark:border-gray-800 dark:bg-gray-900">
+      {pageImageProblem(activePage, unloadablePages)}
+    </div>
+  );
+
   const errorBanner = error && (
     <div className="rounded-md border border-gray-300 bg-gray-50 px-3 py-2 text-sm text-red-700 dark:border-gray-800 dark:bg-gray-900 dark:text-red-500">
       {error}
@@ -2062,6 +2082,7 @@ export default function MarkupEditor({
             </p>
           )}
         </div>
+        {imageBanner}
         {errorBanner}
         {lockedBanner}
 

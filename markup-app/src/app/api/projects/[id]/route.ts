@@ -82,9 +82,13 @@ export async function DELETE(
   }
 
   const pages = project.documents.flatMap((d) => d.pages);
-  await Promise.all(pages.map((p) => deleteFile(p.imagePath.replace(/^\/uploads\//, ""))));
 
   await prisma.project.delete({ where: { id } });
+
+  // After the record is gone, for the same reason as the page delete: the
+  // images used to go first, so a delete that failed left a project that was
+  // still shareable and whose every page had lost its plan.
+  await Promise.all(pages.map((p) => deleteFile(p.imagePath.replace(/^\/uploads\//, ""))));
 
   return NextResponse.json({ ok: true });
 }
