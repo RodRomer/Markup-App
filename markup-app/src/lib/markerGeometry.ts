@@ -35,6 +35,22 @@ export function snapToCommonAngle(
   return { dx: Math.cos(nearestSnap) * length, dy: Math.sin(nearestSnap) * length };
 }
 
+// Both renderers draw from these, and both used to declare their own copy with
+// a comment in the export saying it matched the editor -- an agreement kept by
+// hand, between two files, that nothing checked. A marker drawn at one weight on
+// screen and another in the PDF still looks like a marker in both, so a drift
+// here would not announce itself.
+
+// Section cut lines and revision leaders are the same weight of line and are
+// drawn from this single factor, so changing one changes both.
+export const MARKER_LINE_FACTOR = 0.0022;
+
+// Default callout text width, as a fraction of page width. Equivalent to the ~34
+// characters the old character-count wrapper allowed at this font size; an earlier
+// pass set this to 0.085, which halved the box and turned two-line callouts into
+// four-line ones.
+export const REVISION_TEXT_WIDTH = 0.163;
+
 /** A marker's dot is drawn at `size * DOT_RADIUS_FACTOR` — arrow geometry is built around this same radius so the two always line up. */
 export const DOT_RADIUS_FACTOR = 0.5;
 

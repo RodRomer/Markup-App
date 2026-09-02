@@ -15,6 +15,8 @@ import {
   arrowTipPoint,
   arrowWedgePoints,
   DOT_RADIUS_FACTOR,
+  MARKER_LINE_FACTOR,
+  REVISION_TEXT_WIDTH,
   sectionFlagPolygonPoints,
   snapToCommonAngle,
   toSvgPoints,
@@ -76,16 +78,6 @@ function clamp(value: number, min: number, max: number) {
 }
 
 // Friendlier than MARKER_TYPE_INFO's shortLabel ("S") for count displays.
-// Section cut lines and revision leaders are the same weight of line and are drawn
-// from this single factor, so changing one changes both.
-// Default callout text width, as a fraction of page width. Equivalent to the ~34
-// characters the old character-count wrapper allowed at this font size; an earlier
-// pass set this to 0.085, which halved the box and turned two-line callouts into
-// four-line ones.
-const REVISION_TEXT_WIDTH = 0.163;
-
-const MARKER_LINE_FACTOR = 0.0022;
-
 const HELP_DISMISSED_KEY = "markup.helpDismissed";
 
 const COUNT_LABEL: Record<MarkerType, string> = { IE: "IE", SECTION: "Section", NOTE: "Revision" };

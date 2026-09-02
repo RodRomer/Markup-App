@@ -1,21 +1,17 @@
 import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
 import { readFile } from "fs/promises";
 import path from "path";
-import { arrowWedgePoints, DOT_RADIUS_FACTOR, sectionFlagPolygonPoints } from "./markerGeometry";
+import {
+  arrowWedgePoints,
+  DOT_RADIUS_FACTOR,
+  MARKER_LINE_FACTOR,
+  REVISION_TEXT_WIDTH,
+  sectionFlagPolygonPoints,
+} from "./markerGeometry";
 import { helveticaWidth, MARKER_TYPE_INFO, revisionBoxPosition, wrapToWidth } from "./markerTypes";
 import type { MarkerData, ProjectData } from "./types";
 
 const LETTER: [number, number] = [612, 792];
-
-// Matches MARKER_LINE_FACTOR in MarkupEditor -- section cut lines and revision
-// leaders are the same weight, and the export has to agree with the screen.
-// Default callout text width, as a fraction of page width. Equivalent to the ~34
-// characters the old character-count wrapper allowed at this font size; an earlier
-// pass set this to 0.085, which halved the box and turned two-line callouts into
-// four-line ones.
-const REVISION_TEXT_WIDTH = 0.163;
-
-const MARKER_LINE_FACTOR = 0.0022;
 
 // A revision callout shows this many wrapped lines before the rest is only
 // readable in the appendix. Matches what the box renders on screen.
