@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 
 import { formatMoney } from "@/lib/money";
+import NewProject from "@/components/NewProject";
 
 /** Projects, and what can be done to one -- the same actions Waystone's Rune
  *  tab offers, for when the desktop app is not to hand.
@@ -111,6 +112,7 @@ export default function StaffConsole() {
   const [copied, setCopied] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
   const [priceDraft, setPriceDraft] = useState("");
+  const [creating, setCreating] = useState(false);
 
   useEffect(() => setSession(readStoredSession()), []);
   useEffect(() => setSeen(readSeen()), []);
@@ -294,6 +296,19 @@ export default function StaffConsole() {
           </button>
         </div>
       </div>
+    );
+  }
+
+  if (creating && session) {
+    return (
+      <NewProject
+        token={session.token}
+        onCancel={() => setCreating(false)}
+        onCreated={async () => {
+          setCreating(false);
+          await loadProjects();
+        }}
+      />
     );
   }
 
@@ -485,6 +500,9 @@ export default function StaffConsole() {
           Projects
         </h2>
         <div className="flex gap-2">
+          <button className={PRIMARY} onClick={() => setCreating(true)}>
+            New project
+          </button>
           <button className={BTN} onClick={() => void loadProjects()}>
             Refresh
           </button>

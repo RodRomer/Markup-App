@@ -59,6 +59,17 @@ test("every staff route narrows to the team, not just to the id", () => {
     "these look a project up without constraining it to the caller's team");
 });
 
+test("the only other staff route, blob upload, is scoped too", () => {
+  // Not under /api/projects, so the sweep above does not reach it -- and it is
+  // the one route that grants write access to storage. Open, anyone could fill
+  // the blob store; on the admin key, a second credential would be doing
+  // everyday work.
+  const route = readFileSync(path.join(REPO, "src/app/api/blob-upload/route.ts"), "utf8");
+  assert.ok(route.includes("requireTeam("), "the upload route does not establish a team");
+  assert.equal(route.includes("requireStaff("), false,
+    "the upload route is on the admin key");
+});
+
 test("the admin key still guards team management, and only that", () => {
   const teams = readFileSync(path.join(REPO, "src/app/api/teams/route.ts"), "utf8");
   assert.ok(teams.includes("requireStaff("),
