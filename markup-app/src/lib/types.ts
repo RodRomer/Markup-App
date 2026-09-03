@@ -22,6 +22,11 @@ export type PageData = {
   imagePath: string;
   width: number;
   height: number;
+  /** The editor's copy, rendered at display size rather than shrunk from the
+   *  200 DPI original. Null on pages uploaded before it existed, which fall
+   *  back to imagePath. */
+  displayPath?: string | null;
+  displayWidth?: number | null;
   kind: "image" | "pdf";
   markers: MarkerData[];
 };
@@ -88,6 +93,8 @@ type ProjectWithRelations = {
       imagePath: string;
       width: number;
       height: number;
+      displayPath: string | null;
+      displayWidth: number | null;
       markers: (MarkerWithRelations & { createdAt: Date })[];
     }[];
   }[];
@@ -104,6 +111,8 @@ export function toProjectData(project: ProjectWithRelations): ProjectData {
       imagePath: p.imagePath,
       width: p.width,
       height: p.height,
+      displayPath: p.displayPath,
+      displayWidth: p.displayWidth,
       kind: p.kind,
       markers: [...p.markers]
         .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime())

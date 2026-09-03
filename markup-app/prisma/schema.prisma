@@ -58,6 +58,20 @@ model Page {
   imagePath   String
   width       Int
   height      Int
+  /// A second, smaller render of the same page, for the editor to display.
+  ///
+  /// imagePath is 200 DPI so the export can be plotted at size; on a 36-inch
+  /// sheet that is 7200px, and the browser shrinking it to fit averages each
+  /// screen pixel over ~36 source pixels. A black hairline comes out pale grey
+  /// -- measured at 85% of the ink lost -- and the decoded bitmap is 138 MB on
+  /// whatever device the client happens to be holding.
+  ///
+  /// This one is rendered natively at display size rather than shrunk, so the
+  /// lines keep their weight. Nullable: pages uploaded before it existed have
+  /// only the full-resolution image, and the editor falls back to that.
+  displayPath   String?
+  displayWidth  Int?
+  displayHeight Int?
   markers     Marker[]
 }
 

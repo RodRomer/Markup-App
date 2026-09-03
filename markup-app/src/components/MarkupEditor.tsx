@@ -7,6 +7,7 @@ import {
   MARKER_TYPE_INFO,
   MARKER_TYPES,
   pageImageProblem,
+  planImageSrc,
   REVISION_FONT_FAMILY,
   revisionBoxPosition,
   type MarkerType,
@@ -273,6 +274,11 @@ export default function MarkupEditor({
   const locked = status === "submitted";
   const activePage = pages.find((p) => p.id === activePageId) ?? pages[0];
   const selectedMarker = selectedMarkerId ? findMarker(selectedMarkerId) ?? null : null;
+
+  const planSrc = useMemo(
+    () => planImageSrc(activePage, baseWidth, zoom,
+                       typeof window === "undefined" ? 1 : window.devicePixelRatio),
+    [activePage, baseWidth, zoom]);
 
   const overallCounts = useMemo(
     () => countByType(pages.flatMap((p) => p.markers)),
@@ -1283,7 +1289,7 @@ export default function MarkupEditor({
               the plan is pan/zoomed via a CSS transform and measured directly for
               fit-to-viewport; next/image's wrapper and sizing get in the way of both */}
           <img
-            src={activePage.imagePath}
+            src={planSrc}
             alt={`Page ${activePage.pageNumber}`}
             draggable={false}
             onLoad={() => {

@@ -43,8 +43,11 @@ export async function GET(request: Request) {
   );
 }
 
-type PageMeta = { width: number; height: number };
-type UploadedPage = { imagePath: string; width: number; height: number };
+type PageMeta = { width: number; height: number; displayWidth?: number; displayHeight?: number };
+type UploadedPage = {
+  imagePath: string; width: number; height: number;
+  displayPath?: string; displayWidth?: number; displayHeight?: number;
+};
 
 async function createProjectAndDocument(
   name: string,
@@ -166,13 +169,20 @@ async function handleJsonBody(request: Request, teamId: string) {
 
   try {
     for (let i = 0; i < pages.length; i++) {
+      // Pulled out so the optional display dimensions narrow: read straight off
+      // the array TypeScript cannot tell that checking one implies the other.
+      const { imagePath, width, height, displayPath, displayWidth, displayHeight } = pages[i];
+      const hasDisplay = Boolean(displayPath && displayWidth && displayHeight);
       await prisma.page.create({
         data: {
           documentId: document.id,
           pageNumber: i + 1,
-          imagePath: pages[i].imagePath,
-          width: Math.round(pages[i].width),
-          height: Math.round(pages[i].height),
+          imagePath,
+          width: Math.round(width),
+          height: Math.round(height),
+          displayPath: hasDisplay ? displayPath : null,
+          displayWidth: hasDisplay ? Math.round(displayWidth!) : null,
+          displayHeight: hasDisplay ? Math.round(displayHeight!) : null,
         },
       });
     }
@@ -243,6 +253,14 @@ async function handleFormDataBody(request: Request, teamId: string) {
       const imagePath = await saveFile(key, buffer);
       uploaded.push(key);
 
+      const display = formData.get(`display-${i}`);
+      let displayPath: string | null = null;
+      if (display instanceof File && meta[i].displayWidth && meta[i].displayHeight) {
+        const displayKey = `${document.id}-${i}-display.png`;
+        displayPath = await saveFile(displayKey, Buffer.from(await display.arrayBuffer()));
+        uploaded.push(displayKey);
+      }
+
       await prisma.page.create({
         data: {
           documentId: document.id,
@@ -250,6 +268,9 @@ async function handleFormDataBody(request: Request, teamId: string) {
           imagePath,
           width: Math.round(meta[i].width),
           height: Math.round(meta[i].height),
+          displayPath,
+          displayWidth: displayPath ? Math.round(meta[i].displayWidth!) : null,
+          displayHeight: displayPath ? Math.round(meta[i].displayHeight!) : null,
         },
       });
     }

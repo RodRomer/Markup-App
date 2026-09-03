@@ -138,3 +138,31 @@ export function pageImageProblem(
   return `Page ${page.pageNumber} didn't load, so this is not the plan -- don't ` +
     `mark it up. Reload the page; if it still fails, tell whoever sent you the link.`;
 }
+
+/**
+ * Which of a page's two renders to show at the current zoom.
+ *
+ * `imagePath` is the 200 DPI original, kept so the PDF export can be plotted at
+ * size. On a 36-inch sheet that is 7200px, and showing it at fit means the
+ * browser averages ~36 source pixels into each screen pixel -- measured on a
+ * real sheet, 85% of the ink disappears and black hairlines come out pale grey.
+ *
+ * `displayPath` is the same page rendered natively at ~2400px, which keeps the
+ * line weight and decodes 15 MB instead of 138. It is the better picture right
+ * up until it is being enlarged past its own resolution; beyond that the
+ * full-size original genuinely has more to show.
+ *
+ * Compared in device pixels rather than CSS pixels, so a retina screen crosses
+ * over at half the zoom a 1x screen does -- which is exactly when it should.
+ */
+export function planImageSrc(
+  page: { imagePath: string; displayPath?: string | null; displayWidth?: number | null } | null | undefined,
+  baseWidth: number,
+  zoom: number,
+  devicePixelRatio = 1
+): string | undefined {
+  if (!page) return undefined;
+  if (!page.displayPath || !page.displayWidth) return page.imagePath;
+  const shownDevicePixels = baseWidth * zoom * (devicePixelRatio || 1);
+  return shownDevicePixels > page.displayWidth ? page.imagePath : page.displayPath;
+}
