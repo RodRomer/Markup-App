@@ -2,18 +2,18 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { toProjectData } from "@/lib/types";
 import { generateProjectPdf } from "@/lib/exportPdf";
-import { requireStaff } from "@/lib/staffAuth";
+import { isDenied, requireTeam } from "@/lib/teamAuth";
 
 export async function GET(
   request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const denied = requireStaff(request);
-  if (denied) return denied;
+  const who = await requireTeam(request);
+  if (isDenied(who)) return who;
   const { id } = await params;
 
-  const project = await prisma.project.findUnique({
-    where: { id },
+  const project = await prisma.project.findFirst({
+    where: { id, teamId: who.teamId },
     include: {
       documents: {
         include: {

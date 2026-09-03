@@ -170,9 +170,15 @@ function ToolIcon({ type, size = 24 }: { type: MarkerType; size?: number }) {
     <svg viewBox="0 0 80 40" style={{ width: size * 1.6, height: size, flexShrink: 0 }}>
       <line x1={9} y1={32} x2={34} y2={20} stroke={color} strokeWidth={2.6} />
       <polygon points="9,32 19,30.5 16,23.5" fill={color} />
-      <rect x={34} y={7} width={38} height={22} rx={3} fill="none" stroke={color} strokeWidth={2.6} />
-      <line x1={40} y1={15} x2={62} y2={15} stroke={color} strokeWidth={2.2} opacity={0.55} />
-      <line x1={40} y1={22} x2={55} y2={22} stroke={color} strokeWidth={2.2} opacity={0.55} />
+      {/* Filled, like the real callout and its PDF: an outline-only box was the
+          old note marker's look and stopped matching what gets placed. The two
+          bars are what the box actually contains -- the label in the marker's
+          own colour on top, the note text under it in grey -- rather than two
+          identical grey lines standing in for "some words". */}
+      <rect x={34} y={7} width={38} height={22} rx={3} fill="#ffffff" fillOpacity={0.95}
+            stroke={color} strokeWidth={2.6} />
+      <line x1={39} y1={14} x2={58} y2={14} stroke={color} strokeWidth={2.6} />
+      <line x1={39} y1={21} x2={66} y2={21} stroke="#6b7280" strokeWidth={2} opacity={0.75} />
     </svg>
   );
 }

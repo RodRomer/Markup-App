@@ -29,7 +29,15 @@ model Project {
   // would only follow writes to this row, and every one of those events
   // happens in the Marker table, so it is set explicitly instead.
   lastActivityAt DateTime @default(now())
+  // Which team's work this is. Nullable because a project can outlive the
+  // team that made it, and because the projects that existed before teams
+  // did have no honest answer -- an unassigned project belongs to no team
+  // and so appears on no team's list.
+  teamId       String?
+  team         Team?     @relation(fields: [teamId], references: [id], onDelete: SetNull)
   documents    Document[]
+
+  @@index([teamId])
 }
 
 model Document {
@@ -76,4 +84,31 @@ model MarkerDirection {
   marker   Marker @relation(fields: [markerId], references: [id], onDelete: Cascade)
   angle    Float // degrees, screen pixel-space atan2 convention (0 = right, 90 = down)
   order    Int
+}
+
+/// A group of staff who share one password, kept in a password manager rather
+/// than issued per person. Deliberately the simplest thing that separates one
+/// team's projects from another's; individual accounts can come later without
+/// changing what a project belongs to.
+model Team {
+  id           String    @id @default(cuid())
+  name         String    @unique
+  /// scrypt, salted per team. Never the password itself, and never returned.
+  passwordHash String
+  createdAt    DateTime  @default(now())
+  projects     Project[]
+  sessions     Session[]
+}
+
+/// A logged-in browser or Waystone install. Stored rather than signed so that
+/// signing out actually revokes, and so no second server secret has to be kept
+/// safe -- losing that secret is the failure this design is trying to avoid.
+model Session {
+  token     String   @id
+  teamId    String
+  team      Team     @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@index([teamId])
 }

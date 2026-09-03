@@ -2,18 +2,18 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { deleteFile } from "@/lib/storage";
 import { toProjectData } from "@/lib/types";
-import { requireStaff } from "@/lib/staffAuth";
+import { isDenied, requireTeam } from "@/lib/teamAuth";
 
 export async function GET(
   request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const denied = requireStaff(request);
-  if (denied) return denied;
+  const who = await requireTeam(request);
+  if (isDenied(who)) return who;
   const { id } = await params;
 
-  const project = await prisma.project.findUnique({
-    where: { id },
+  const project = await prisma.project.findFirst({
+    where: { id, teamId: who.teamId },
     include: {
       documents: {
         include: {
@@ -34,8 +34,8 @@ export async function PATCH(
   request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const denied = requireStaff(request);
-  if (denied) return denied;
+  const who = await requireTeam(request);
+  if (isDenied(who)) return who;
   const { id } = await params;
   const body = await request.json();
 
@@ -56,6 +56,10 @@ export async function PATCH(
     data.pricePerIE = body.pricePerIE;
   }
 
+  const owned = await prisma.project.findFirst({ where: { id, teamId: who.teamId }, select: { id: true } });
+  if (!owned) {
+    return NextResponse.json({ error: "Project not found" }, { status: 404 });
+  }
   const project = await prisma.project.update({ where: { id }, data });
   return NextResponse.json({
     allowIE: project.allowIE,
@@ -68,12 +72,12 @@ export async function DELETE(
   request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const denied = requireStaff(request);
-  if (denied) return denied;
+  const who = await requireTeam(request);
+  if (isDenied(who)) return who;
   const { id } = await params;
 
-  const project = await prisma.project.findUnique({
-    where: { id },
+  const project = await prisma.project.findFirst({
+    where: { id, teamId: who.teamId },
     include: { documents: { include: { pages: true } } },
   });
 

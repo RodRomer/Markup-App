@@ -1,12 +1,15 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { deleteFile, saveFile } from "@/lib/storage";
-import { requireStaff } from "@/lib/staffAuth";
+import { isDenied, requireTeam } from "@/lib/teamAuth";
 
 export async function GET(request: Request) {
-  const denied = requireStaff(request);
-  if (denied) return denied;
+  const who = await requireTeam(request);
+  if (isDenied(who)) return who;
   const projects = await prisma.project.findMany({
+    // The scope of this whole surface: a team sees its own work and nothing
+    // else. Projects with no team belong to nobody and appear on no list.
+    where: { teamId: who.teamId },
     orderBy: { createdAt: "desc" },
     include: {
       documents: {
@@ -49,10 +52,11 @@ async function createProjectAndDocument(
   originalFilename: string,
   allowIE: boolean,
   pricePerIE: number | null,
-  allowSection: boolean
+  allowSection: boolean,
+  teamId: string
 ) {
   const project = await prisma.project.create({
-    data: { name: name.trim(), status: "sent", allowIE, allowSection, pricePerIE },
+    data: { name: name.trim(), status: "sent", allowIE, allowSection, pricePerIE, teamId },
   });
   const document = await prisma.document.create({
     data: { projectId: project.id, originalFilename, kind },
@@ -126,7 +130,7 @@ function createFailureResponse(err: unknown) {
 // Pages already uploaded directly to Blob storage by the caller — this
 // request only carries metadata + URLs, no file bytes, so it skips Vercel's
 // serverless request-body size limit entirely.
-async function handleJsonBody(request: Request) {
+async function handleJsonBody(request: Request, teamId: string) {
   const body = await request.json();
   const { name, kind, originalFilename, allowIE = true, allowSection = true,
           pricePerIE = null, pages } = body as {
@@ -156,7 +160,8 @@ async function handleJsonBody(request: Request) {
     originalFilename,
     allowIE,
     pricePerIE,
-    allowSection
+    allowSection,
+    teamId
   );
 
   try {
@@ -184,7 +189,7 @@ async function handleJsonBody(request: Request) {
 
 // Legacy path: raw file bytes proxied through this route and saved server-side
 // (local filesystem in dev, Blob in production if no client-upload route is used).
-async function handleFormDataBody(request: Request) {
+async function handleFormDataBody(request: Request, teamId: string) {
   const formData = await request.formData();
 
   const name = formData.get("name");
@@ -220,7 +225,8 @@ async function handleFormDataBody(request: Request) {
     originalFilename,
     allowIE,
     pricePerIE,
-    allowSection
+    allowSection,
+    teamId
   );
 
   // Only keys that actually reached storage, so a failed saveFile does not send
@@ -257,11 +263,11 @@ async function handleFormDataBody(request: Request) {
 }
 
 export async function POST(request: Request) {
-  const denied = requireStaff(request);
-  if (denied) return denied;
+  const who = await requireTeam(request);
+  if (isDenied(who)) return who;
   const contentType = request.headers.get("content-type") ?? "";
   if (contentType.includes("application/json")) {
-    return handleJsonBody(request);
+    return handleJsonBody(request, who.teamId);
   }
-  return handleFormDataBody(request);
+  return handleFormDataBody(request, who.teamId);
 }

@@ -32,7 +32,7 @@ type Detail = Project & {
   pages: { id: string; pageNumber: number }[];
 };
 
-const KEY_STORE = "rune.staffKey";
+const SESSION_STORE = "rune.session";
 const SEEN_STORE = "rune.lastSeen";
 
 /** When this browser last opened each project. Per-device on purpose: the
@@ -73,29 +73,19 @@ const dateAndTime = (iso: string) =>
     month: "short", day: "numeric", hour: "numeric", minute: "2-digit",
   });
 
-/** Why a pasted value cannot be the key, or null if it looks plausible.
- *
- *  Waystone's own key field is seeded with bullet characters standing in for a
- *  key already saved -- the real value is never echoed back out of the
- *  registry. The field looks entirely copyable, so copying from there and
- *  pasting here is the obvious mistake to make, and "Not authorised" would not
- *  hint at it. */
-function whyNotAKey(value: string): string | null {
-  if (/^[•*●·]+$/.test(value)) {
-    return "That is the row of dots Waystone shows in place of a saved key, not the key itself. " +
-      "The value is only readable from the Windows environment variable MARKUP_STAFF_KEY.";
-  }
-  if (value.includes(" ")) {
-    return "That contains a space, so it is probably not the key.";
-  }
-  return null;
-}
+type Session = { token: string; teamName: string };
 
-function readStoredKey(): string {
+/** The signed-in team, for this tab only. sessionStorage rather than
+ *  localStorage: this page is on a public address, and a session that outlives
+ *  the tab is one left open on a shared machine. */
+function readStoredSession(): Session | null {
   try {
-    return sessionStorage.getItem(KEY_STORE) ?? "";
+    const raw = sessionStorage.getItem(SESSION_STORE);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as Session;
+    return parsed?.token ? parsed : null;
   } catch {
-    return ""; // private windows and blocked site data both land here
+    return null;
   }
 }
 
@@ -108,8 +98,9 @@ const PRIMARY =
   "disabled:opacity-40 disabled:cursor-not-allowed";
 
 export default function StaffConsole() {
-  const [key, setKey] = useState("");
-  const [typedKey, setTypedKey] = useState("");
+  const [session, setSession] = useState<Session | null>(null);
+  const [nameDraft, setNameDraft] = useState("");
+  const [passwordDraft, setPasswordDraft] = useState("");
   const [projects, setProjects] = useState<Project[] | null>(null);
   const [detail, setDetail] = useState<Detail | null>(null);
   // Empty on the server and on the first paint, then filled from
@@ -121,14 +112,14 @@ export default function StaffConsole() {
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
   const [priceDraft, setPriceDraft] = useState("");
 
-  useEffect(() => setKey(readStoredKey()), []);
+  useEffect(() => setSession(readStoredSession()), []);
   useEffect(() => setSeen(readSeen()), []);
 
   const call = useCallback(
     async (path: string, init: RequestInit = {}) => {
       const res = await fetch(path, {
         ...init,
-        headers: { ...(init.headers ?? {}), "x-waystone-key": key },
+        headers: { ...(init.headers ?? {}), "x-team-token": session?.token ?? "" },
       });
       if (!res.ok) {
         let message = "HTTP " + res.status;
@@ -138,28 +129,24 @@ export default function StaffConsole() {
         } catch {
           /* a non-JSON error body is still an error */
         }
-        // A key IS set, so 401/403 means it is the wrong one rather than absent.
-        // Waystone draws the same distinction, because the two need different fixes.
-        // The length is included because the usual cause is that what arrived is
-        // not what was copied -- truncated, padded, or a different value
-        // entirely -- and "Not authorised" alone gives no way to tell.
+        // A session that is gone or expired is not a failed action -- it is a
+        // sign-in that has to happen again, and saying so is the only useful
+        // response. Named so the caller can drop the session rather than leave
+        // the page retrying with a token the server has stopped accepting.
         if (res.status === 401 || res.status === 403) {
-          const rejected = new Error(
-            message + " — the key this page sent was " + key.length +
-            " characters. If that is not the length of your key, what reached the " +
-            "box is not what you copied.");
-          rejected.name = "KeyRejected";
+          const rejected = new Error(message);
+          rejected.name = "SessionRejected";
           throw rejected;
         }
         throw new Error(message);
       }
       return res;
     },
-    [key],
+    [session],
   );
 
   const loadProjects = useCallback(async () => {
-    if (!key) return;
+    if (!session) return;
     setError(null);
     try {
       const res = await call("/api/projects");
@@ -168,30 +155,30 @@ export default function StaffConsole() {
       // Cleared, so a stale list cannot sit there looking current under an error.
       setProjects(null);
       const message = e instanceof Error ? e.message : String(e);
-      // A refused key must not stick. It is stored the moment it is entered, and
-      // a stored key sends this straight to the list view -- so the input box
-      // disappears and every reload lands back here with no way to type another.
-      // Dropping it returns the prompt, with the reason still on screen.
-      if (e instanceof Error && e.name === "KeyRejected") {
+      // A refused session must not stick. It is stored the moment it is issued,
+      // and a stored session sends this straight to the list view -- so the
+      // sign-in form disappears and every reload lands back here with no way to
+      // sign in again. Dropping it returns the form, with the reason on screen.
+      if (e instanceof Error && e.name === "SessionRejected") {
         try {
-          sessionStorage.removeItem(KEY_STORE);
+          sessionStorage.removeItem(SESSION_STORE);
         } catch {
           /* nothing stored to remove */
         }
-        setKey("");
+        setSession(null);
         setError(message);
         return;
       }
       // A TypeError from fetch means the request never reached the server at
       // all -- offline, blocked, an extension. That needs a different fix from
       // a key the server refused, and the two read identically otherwise. The
-      // key is kept: it may well be right and the network wrong.
+      // session is kept: it may well be good and the network wrong.
       setError(e instanceof TypeError
         ? "The request never reached the server (" + message + "). That is a " +
           "connection or browser problem rather than the key."
         : message);
     }
-  }, [call, key]);
+  }, [call, session]);
 
   useEffect(() => {
     void loadProjects();
@@ -211,88 +198,99 @@ export default function StaffConsole() {
     }
   }
 
-  function saveKey() {
-    const trimmed = typedKey.trim();
-    const wrong = whyNotAKey(trimmed);
-    if (wrong) {
-      // Caught before it is stored, so the next reload does not retry it.
-      setError(wrong);
-      return;
-    }
+  async function signIn() {
     setError(null);
+    setBusy("sign-in");
     try {
-      sessionStorage.setItem(KEY_STORE, trimmed);
-    } catch {
-      /* still works for this page load, just not across a reload */
+      const res = await fetch("/api/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: nameDraft.trim(), password: passwordDraft }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body?.error ?? "Could not sign in.");
+
+      const next: Session = { token: body.token, teamName: body.team.name };
+      try {
+        sessionStorage.setItem(SESSION_STORE, JSON.stringify(next));
+      } catch {
+        /* still works for this page load, just not across a reload */
+      }
+      // Cleared straight away rather than left in state: nothing else on this
+      // page ever needs the password again.
+      setPasswordDraft("");
+      setSession(next);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(null);
     }
-    setKey(trimmed);
   }
 
-  function forgetKey() {
+  function signOut() {
+    // Told to the server as well as forgotten here, so the token stops working
+    // everywhere rather than just in this tab.
+    const token = session?.token;
+    if (token) {
+      void fetch("/api/auth/logout", { method: "POST", headers: { "x-team-token": token } })
+        .catch(() => {});
+    }
     try {
-      sessionStorage.removeItem(KEY_STORE);
+      sessionStorage.removeItem(SESSION_STORE);
     } catch {
       /* nothing stored to remove */
     }
-    setKey("");
-    setTypedKey("");
+    setSession(null);
+    setNameDraft("");
+    setPasswordDraft("");
     setProjects(null);
     setDetail(null);
     setError(null);
   }
 
-  if (!key) {
+  if (!session) {
     return (
       <div className={CARD + " p-6"}>
         <h2 className="mb-3 text-[11px] font-bold uppercase tracking-[0.9px] text-[#8c8c8c]">
-          Staff key
+          Sign in
         </h2>
         <p className="mb-4 text-sm leading-relaxed text-[#b2b2b2]">
-          The same key Waystone uses under Settings &rsaquo; Connections. Kept for this tab only,
-          and forgotten when you close it.
+          Your team name and its password. The same pair Waystone uses under Settings
+          &rsaquo; Connections. Kept for this tab only, and forgotten when you close it.
         </p>
         {error && <p className="mb-3 text-sm text-[#f78645]">{error}</p>}
-        {/* Said before Continue is pressed, not only after a refusal. The usual
-            cause of a rejected key is that what is in the box is not what was
-            copied, and a count is the quickest way to see that. */}
-        {typedKey.length > 0 && (
-          <p className="mb-2 text-xs text-[#8c8c8c]">
-            {typedKey.trim().length} characters
-            {typedKey !== typedKey.trim() ? " (and some space around them, which will be trimmed)" : ""}
-          </p>
-        )}
-        <div className="flex gap-2">
+        <div className="flex flex-col gap-2">
           <input
-            // Not type="password", and deliberately so. A masked box cannot be
-            // checked: the key you pasted and the key your browser filled in
-            // for you look identical as dots, which is exactly the confusion
-            // this field kept producing. The value is a shared key copied out
-            // of a Windows environment variable the person can already read,
-            // so hiding it buys nothing and costs the ability to see that what
-            // is in the box is what was copied.
             type="text"
-            // A lone password field on a public address is what a browser's
-            // password manager treats as a sign-in form: it offers to save
-            // whatever is typed and refills it on every later visit, over the
-            // top of a paste. Named, spell-check off, and opted out of every
-            // manager that honours one of these.
-            name="rune-staff-key"
-            autoComplete="off"
-            autoCorrect="off"
-            spellCheck={false}
-            data-1p-ignore
-            data-lpignore="true"
-            data-form-type="other"
-            value={typedKey}
-            onChange={(e) => setTypedKey(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") saveKey();
-            }}
-            placeholder="paste the key"
-            className="flex-1 rounded-lg border border-[#474747] bg-[#1f1f1f] px-3 py-2 font-mono text-sm text-[#f2f2f2] placeholder:text-[#6a6a6a] placeholder:font-sans"
+            name="team"
+            autoComplete="organization"
+            value={nameDraft}
+            onChange={(e) => setNameDraft(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Enter") void signIn(); }}
+            placeholder="team name"
+            className="rounded-lg border border-[#474747] bg-[#1f1f1f] px-3 py-2 text-sm text-[#f2f2f2] placeholder:text-[#6a6a6a]"
           />
-          <button onClick={saveKey} disabled={!typedKey.trim()} className={PRIMARY}>
-            Continue
+          <input
+            // Masked, unlike the staff key this replaced. That one was pasted
+            // out of a variable you could already read, and hiding it only made
+            // a mistyped paste impossible to spot. This is a real password,
+            // typed rather than pasted, and a password manager offering to keep
+            // it is the wanted behaviour rather than the feared one.
+            type="password"
+            name="password"
+            autoComplete="current-password"
+            value={passwordDraft}
+            onChange={(e) => setPasswordDraft(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Enter") void signIn(); }}
+            placeholder="team password"
+            className="rounded-lg border border-[#474747] bg-[#1f1f1f] px-3 py-2 text-sm text-[#f2f2f2] placeholder:text-[#6a6a6a]"
+          />
+          <button
+            onClick={() => void signIn()}
+            disabled={!nameDraft.trim() || !passwordDraft || busy !== null}
+            className={PRIMARY}
+          >
+            {busy === "sign-in" ? "Signing in…" : "Sign in"}
           </button>
         </div>
       </div>
@@ -490,8 +488,8 @@ export default function StaffConsole() {
           <button className={BTN} onClick={() => void loadProjects()}>
             Refresh
           </button>
-          <button className={BTN} onClick={forgetKey}>
-            Forget key
+          <button className={BTN} onClick={signOut}>
+            Sign out
           </button>
         </div>
       </div>

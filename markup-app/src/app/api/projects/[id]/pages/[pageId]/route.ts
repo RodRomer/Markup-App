@@ -1,18 +1,18 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { deleteFile } from "@/lib/storage";
-import { requireStaff } from "@/lib/staffAuth";
+import { isDenied, requireTeam } from "@/lib/teamAuth";
 
 export async function DELETE(
   request: Request,
   { params }: { params: Promise<{ id: string; pageId: string }> }
 ) {
-  const denied = requireStaff(request);
-  if (denied) return denied;
+  const who = await requireTeam(request);
+  if (isDenied(who)) return who;
   const { id, pageId } = await params;
 
-  const project = await prisma.project.findUnique({
-    where: { id },
+  const project = await prisma.project.findFirst({
+    where: { id, teamId: who.teamId },
     include: { documents: { include: { pages: true } } },
   });
 
