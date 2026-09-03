@@ -1640,7 +1640,16 @@ export default function MarkupEditor({
                       width={boxW}
                       height={boxH}
                       rx={unit * 0.8}
-                      fill="none"
+                      /* White at 95%, exactly as exportPdf draws it. Two reasons,
+                         and either alone would be enough. The export has always
+                         filled this box, so an unfilled one on screen meant the
+                         plan showed through while marking up and was hidden in the
+                         deliverable -- the one thing this renderer is supposed to
+                         guarantee it does not do. And `fill="none"` is not a hit
+                         target, so the box could only be grabbed by its 2px
+                         border; the interior now takes the pointer too. */
+                      fill="#ffffff"
+                      fillOpacity={0.95}
                       stroke={color}
                       strokeWidth={unit * 0.6}
                       style={grab}

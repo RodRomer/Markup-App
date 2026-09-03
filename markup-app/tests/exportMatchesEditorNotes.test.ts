@@ -220,3 +220,23 @@ for (const [what, marker] of Object.entries(NOTES)) {
     });
   });
 }
+
+// The box's fill was the one part of the callout the two sides disagreed on,
+// and it was invisible as a bug because each looked right on its own: the plan
+// showed through on screen and was covered in the PDF. It also made the box
+// almost unselectable, since an SVG rect with fill="none" takes a pointer only
+// on its 2px border.
+test("both sides fill the callout box the same way", () => {
+  const editor = readFileSync(path.join(REPO, "src/components/MarkupEditor.tsx"), "utf8");
+  const exporter = readFileSync(path.join(REPO, "src/lib/exportPdf.ts"), "utf8");
+
+  // The export: white, slightly see-through, so a callout does not blot out the
+  // linework it points at.
+  assert.match(exporter, /color: rgb\(1, 1, 1\),\s*\n\s*opacity: 0\.95,/,
+               "the export no longer fills the callout box white at 0.95");
+
+  // The editor must say the same thing, and must not go back to fill="none",
+  // which is both a different picture and an unselectable one.
+  assert.match(editor, /fill="#ffffff"\s*\n\s*fillOpacity=\{0\.95\}/,
+               "the editor's callout box does not match the export's fill");
+});
