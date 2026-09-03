@@ -267,7 +267,7 @@ export default function StaffConsole() {
             value={nameDraft}
             onChange={(e) => setNameDraft(e.target.value)}
             onKeyDown={(e) => { if (e.key === "Enter") void signIn(); }}
-            placeholder="team name"
+            placeholder="Team"
             className="rounded-lg border border-[#474747] bg-[#1f1f1f] px-3 py-2 text-sm text-[#f2f2f2] placeholder:text-[#6a6a6a]"
           />
           <input
@@ -282,7 +282,7 @@ export default function StaffConsole() {
             value={passwordDraft}
             onChange={(e) => setPasswordDraft(e.target.value)}
             onKeyDown={(e) => { if (e.key === "Enter") void signIn(); }}
-            placeholder="team password"
+            placeholder="Password"
             className="rounded-lg border border-[#474747] bg-[#1f1f1f] px-3 py-2 text-sm text-[#f2f2f2] placeholder:text-[#6a6a6a]"
           />
           <button
