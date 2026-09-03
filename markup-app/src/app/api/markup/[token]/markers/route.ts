@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { MARKER_TYPES } from "@/lib/markerTypes";
 import { toMarkerData } from "@/lib/types";
+import { touchProject } from "@/lib/activity";
 
 export async function POST(
   request: Request,
@@ -74,5 +75,6 @@ export async function POST(
     include: { directions: { orderBy: { order: "asc" } } },
   });
 
+  await touchProject(token);
   return NextResponse.json(toMarkerData(marker));
 }

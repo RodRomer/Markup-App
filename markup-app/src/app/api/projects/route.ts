@@ -23,6 +23,7 @@ export async function GET(request: Request) {
         name: project.name,
         status: project.status,
         createdAt: project.createdAt.toISOString(),
+        lastActivityAt: project.lastActivityAt.toISOString(),
         markerCount: allMarkers.length,
         ieCount: allMarkers.filter((m) => m.type === "IE").length,
         // Two different things have been called "IE". ieCount is the number of

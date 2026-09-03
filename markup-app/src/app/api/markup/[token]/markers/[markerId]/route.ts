@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { toMarkerData } from "@/lib/types";
+import { touchProject } from "@/lib/activity";
 
 async function loadEditableMarker(token: string, markerId: string) {
   const marker = await prisma.marker.findFirst({
@@ -77,6 +78,7 @@ export async function PATCH(
         include: { directions: { orderBy: { order: "asc" } } },
       });
 
+  await touchProject(token);
   return NextResponse.json(toMarkerData(updated));
 }
 
@@ -98,5 +100,6 @@ export async function DELETE(
   }
 
   await prisma.marker.delete({ where: { id: markerId } });
+  await touchProject(token);
   return NextResponse.json({ ok: true });
 }

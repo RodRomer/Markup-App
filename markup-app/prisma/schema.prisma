@@ -24,6 +24,11 @@ model Project {
   // different from a price of 0 -- so nullable rather than defaulted.
   pricePerIE   Float?
   createdAt    DateTime  @default(now())
+  // Last time the client touched this project -- a marker placed, moved,
+  // retyped or deleted, a reset, a submit or a reopen. Prisma's @updatedAt
+  // would only follow writes to this row, and every one of those events
+  // happens in the Marker table, so it is set explicitly instead.
+  lastActivityAt DateTime @default(now())
   documents    Document[]
 }
 

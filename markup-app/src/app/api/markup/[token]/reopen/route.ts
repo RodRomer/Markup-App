@@ -14,7 +14,7 @@ export async function POST(
 
   const updated = await prisma.project.update({
     where: { id: project.id },
-    data: { status: "sent" },
+    data: { status: "sent", lastActivityAt: new Date() },
   });
 
   return NextResponse.json(updated);

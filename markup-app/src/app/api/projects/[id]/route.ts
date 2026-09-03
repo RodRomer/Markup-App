@@ -27,7 +27,7 @@ export async function GET(
     return NextResponse.json({ error: "Project not found" }, { status: 404 });
   }
 
-  return NextResponse.json({ ...toProjectData(project), createdAt: project.createdAt.toISOString() });
+  return NextResponse.json({ ...toProjectData(project), createdAt: project.createdAt.toISOString(), lastActivityAt: project.lastActivityAt.toISOString() });
 }
 
 export async function PATCH(

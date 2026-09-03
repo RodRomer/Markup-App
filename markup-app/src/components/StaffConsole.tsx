@@ -17,6 +17,7 @@ type Project = {
   name: string;
   status: string;
   createdAt: string;
+  lastActivityAt: string;
   markerCount?: number;
   ieCount?: number;
   /** View directions, not markers -- what a price is multiplied by. */
@@ -32,6 +33,45 @@ type Detail = Project & {
 };
 
 const KEY_STORE = "rune.staffKey";
+const SEEN_STORE = "rune.lastSeen";
+
+/** When this browser last opened each project. Per-device on purpose: the
+ *  question is "since *I* last looked", not since anyone did. */
+function readSeen(): Record<string, string> {
+  try {
+    return JSON.parse(window.localStorage.getItem(SEEN_STORE) ?? "{}") as Record<string, string>;
+  } catch {
+    // A private window, cleared site data, or storage switched off. No marks
+    // means every project with activity shows as new, which is the safe way to
+    // be wrong.
+    return {};
+  }
+}
+
+function markSeen(projectId: string) {
+  try {
+    const seen = readSeen();
+    seen[projectId] = new Date().toISOString();
+    window.localStorage.setItem(SEEN_STORE, JSON.stringify(seen));
+  } catch {
+    // Nothing to do; the badge simply keeps showing.
+  }
+}
+
+/** A project has moved since this browser last looked at it.
+ *
+ *  Falls back to createdAt rather than to "never", so a project nobody has
+ *  opened is only flagged once a client has actually done something to it --
+ *  otherwise every project would arrive already shouting. */
+function hasUnseenActivity(project: Project, seen: Record<string, string>): boolean {
+  return new Date(project.lastActivityAt) > new Date(seen[project.id] ?? project.createdAt);
+}
+
+const shortDate = (iso: string) => new Date(iso).toLocaleDateString();
+const dateAndTime = (iso: string) =>
+  new Date(iso).toLocaleString(undefined, {
+    month: "short", day: "numeric", hour: "numeric", minute: "2-digit",
+  });
 
 /** Why a pasted value cannot be the key, or null if it looks plausible.
  *
@@ -72,6 +112,9 @@ export default function StaffConsole() {
   const [typedKey, setTypedKey] = useState("");
   const [projects, setProjects] = useState<Project[] | null>(null);
   const [detail, setDetail] = useState<Detail | null>(null);
+  // Empty on the server and on the first paint, then filled from
+  // localStorage -- the same shape the staff key uses, for the same reason.
+  const [seen, setSeen] = useState<Record<string, string>>({});
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
@@ -79,6 +122,7 @@ export default function StaffConsole() {
   const [priceDraft, setPriceDraft] = useState("");
 
   useEffect(() => setKey(readStoredKey()), []);
+  useEffect(() => setSeen(readSeen()), []);
 
   const call = useCallback(
     async (path: string, init: RequestInit = {}) => {
@@ -257,7 +301,6 @@ export default function StaffConsole() {
 
   if (detail) {
     const link = window.location.origin + "/markup/" + detail.shareToken;
-    const submitted = detail.status === "submitted";
     return (
       <div className={CARD + " p-6"}>
         <button
@@ -369,19 +412,6 @@ export default function StaffConsole() {
             Download PDF
           </a>
           <button
-            className={BTN}
-            disabled={!submitted || busy !== null}
-            onClick={() =>
-              void act("reopen", async () => {
-                await call("/api/markup/" + detail.shareToken + "/reopen", { method: "POST" });
-                setDetail({ ...detail, status: "sent" });
-                await loadProjects();
-              })
-            }
-          >
-            {busy === "reopen" ? "Reopening…" : "Reopen"}
-          </button>
-          <button
             className={
               BTN + (confirmDelete === detail.id ? " border-[#f78645] text-[#f78645]" : "")
             }
@@ -480,7 +510,9 @@ export default function StaffConsole() {
       )}
 
       <div className="flex flex-col gap-2">
-        {(projects ?? []).map((project) => (
+        {(projects ?? []).map((project) => {
+          const unseen = hasUnseenActivity(project, seen);
+          return (
           <button
             key={project.id}
             className="rounded-lg border border-[#2e2e2e] bg-[#1f1f1f] p-3 text-left transition-colors hover:border-[#474747]"
@@ -490,12 +522,25 @@ export default function StaffConsole() {
                 const res = await call("/api/projects/" + project.id);
                 const loaded: Detail = await res.json();
                 setPriceDraft(loaded.pricePerIE === null ? "" : String(loaded.pricePerIE));
+                markSeen(project.id);
+                setSeen(readSeen());
                 setDetail(loaded);
               })
             }
           >
             <div className="flex items-baseline justify-between gap-3">
-              <span className="font-medium">{project.name}</span>
+              <span className="font-medium">
+                {unseen && (
+                  <span
+                    title="Changed since you last opened this"
+                    aria-label="Changed since you last opened this"
+                    className="mr-2 inline-flex h-4 w-4 items-center justify-center rounded-full bg-[#f78645] text-[10px] font-bold text-[#171717]"
+                  >
+                    !
+                  </span>
+                )}
+                {project.name}
+              </span>
               <span className="shrink-0 text-xs text-[#8c8c8c]">{project.status}</span>
             </div>
             <span className="text-xs text-[#8c8c8c]">
@@ -503,8 +548,13 @@ export default function StaffConsole() {
               {project.ieViewCount ?? 0} view{project.ieViewCount === 1 ? "" : "s"} &middot;{" "}
               {project.markerCount ?? 0} marker{project.markerCount === 1 ? "" : "s"} total
             </span>
+            <span className={"text-xs " + (unseen ? "text-[#f78645]" : "text-[#8c8c8c]")}>
+              Created {shortDate(project.createdAt)} &middot; Updated{" "}
+              {dateAndTime(project.lastActivityAt)}
+            </span>
           </button>
-        ))}
+          );
+        })}
       </div>
     </div>
   );

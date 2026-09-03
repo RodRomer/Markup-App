@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { resetScopeFrom } from "@/lib/resetScope";
+import { touchProject } from "@/lib/activity";
 
 export async function POST(
   request: Request,
@@ -30,5 +31,6 @@ export async function POST(
 
   // The caller is told which of the two things happened and how much went,
   // so "reset this page" quietly clearing the project cannot pass unnoticed.
+  await touchProject(token);
   return NextResponse.json({ ok: true, scope: scope.kind, deleted: count });
 }

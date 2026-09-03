@@ -23,6 +23,8 @@ const STUB = [
   "  marker: { deleteMany: async (args: { where: unknown }) => {",
   "    captured.push({ where: args.where }); return { count: 7 }; } },",
   "};",
+  "export const touched: string[] = [];",
+  "const touchProject = async (token: string) => { touched.push(token); };",
 ];
 
 function buildRouteUnderTest() {
@@ -32,7 +34,8 @@ function buildRouteUnderTest() {
 
   const kept = original.slice(0, importCount)
     .filter((line) => line !== 'import { NextResponse } from "next/server";'
-                   && line !== 'import { prisma } from "@/lib/db";')
+                   && line !== 'import { prisma } from "@/lib/db";'
+                   && line !== 'import { touchProject } from "@/lib/activity";')
     .map((line) => line.replace('"@/', `"${SRC_URL}/`).replace(/";$/, '.ts";'));
 
   const body = original.slice(importCount);
