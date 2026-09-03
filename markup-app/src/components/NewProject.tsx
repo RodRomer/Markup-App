@@ -43,6 +43,7 @@ export default function NewProject({
   const [price, setPrice] = useState("");
   const [step, setStep] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [dragging, setDragging] = useState(false);
 
   const busy = step !== null;
 
@@ -65,6 +66,14 @@ export default function NewProject({
       displayWidth: page.displayWidth ?? undefined,
       displayHeight: page.displayHeight ?? undefined,
     };
+  }
+
+  /** Taking a file, however it arrived. */
+  function choose(chosen: File | null) {
+    setFile(chosen);
+    // The filename is nearly always what the project should be called, and
+    // typing it again is the sort of busywork nobody thanks you for.
+    if (chosen && !name.trim()) setName(chosen.name.replace(/\.[^.]+$/, ""));
   }
 
   async function create() {
@@ -134,19 +143,50 @@ export default function NewProject({
           onChange={(e) => setName(e.target.value)}
         />
 
-        <input
-          type="file"
-          accept=".pdf,.png,.jpg,.jpeg,application/pdf,image/png,image/jpeg"
-          disabled={busy}
-          onChange={(e) => {
-            const chosen = e.target.files?.[0] ?? null;
-            setFile(chosen);
-            // The filename is nearly always what the project should be called,
-            // and typing it again is the sort of busywork nobody thanks you for.
-            if (chosen && !name.trim()) setName(chosen.name.replace(/\.[^.]+$/, ""));
+        {/* A label wrapping the input, so the whole panel is the click target as
+            well as the drop target -- a drop zone you cannot click is a puzzle,
+            and a file button you cannot drop onto is the thing being fixed. */}
+        <label
+          onDragOver={(e) => {
+            if (busy) return;
+            // Both needed: without preventDefault the browser navigates to the
+            // file instead of handing it over.
+            e.preventDefault();
+            setDragging(true);
           }}
-          className="text-sm text-[#b2b2b2] file:mr-3 file:rounded-lg file:border file:border-[#474747] file:bg-[#2e2e2e] file:px-3 file:py-2 file:text-sm file:text-[#f2f2f2]"
-        />
+          onDragLeave={() => setDragging(false)}
+          onDrop={(e) => {
+            e.preventDefault();
+            setDragging(false);
+            if (busy) return;
+            // Only the first. A plan set is one file; taking two silently would
+            // create a project from whichever the browser happened to list first.
+            const dropped = e.dataTransfer.files?.[0] ?? null;
+            if (e.dataTransfer.files?.length > 1) {
+              setError("One file at a time — the first was taken.");
+            }
+            choose(dropped);
+          }}
+          className={
+            "flex cursor-pointer flex-col items-center gap-1 rounded-lg border border-dashed px-4 py-6 text-center text-sm transition-colors " +
+            (busy ? "cursor-not-allowed opacity-50 " : "") +
+            (dragging
+              ? "border-[#5286ff] bg-[#5286ff]/10 text-[#f2f2f2]"
+              : "border-[#474747] bg-[#1f1f1f] text-[#b2b2b2] hover:border-[#6a6a6a]")
+          }
+        >
+          <span className="font-medium">
+            {file ? file.name : "Drop a plan here, or click to choose"}
+          </span>
+          <span className="text-xs text-[#6a6a6a]">PDF, PNG or JPG</span>
+          <input
+            type="file"
+            accept=".pdf,.png,.jpg,.jpeg,application/pdf,image/png,image/jpeg"
+            disabled={busy}
+            onChange={(e) => choose(e.target.files?.[0] ?? null)}
+            className="hidden"
+          />
+        </label>
 
         <div className="flex flex-wrap items-center gap-4 text-sm text-[#b2b2b2]">
           <label className="flex items-center gap-2">
