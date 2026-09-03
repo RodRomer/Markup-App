@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
-import { saveFile } from "@/lib/storage";
+import { deleteFile, saveFile } from "@/lib/storage";
 import { requireStaff } from "@/lib/staffAuth";
 
 export async function GET(request: Request) {
@@ -59,6 +59,69 @@ async function createProjectAndDocument(
   return { project, document };
 }
 
+/** A create that could not be finished, carrying the status the caller should see. */
+class CreateFailed extends Error {
+  // Declared rather than a constructor parameter property: the tests run this
+  // file's own text through Node's strip-only type stripping, which rejects
+  // those outright.
+  readonly status: number;
+
+  constructor(message: string, status: number) {
+    super(message);
+    this.status = status;
+  }
+}
+
+/**
+ * Undo a half-made project.
+ *
+ * The project row, its document and its share token all exist before the first
+ * page does, so every exit from the loops below used to leave a real, listable,
+ * shareable project holding only the pages that got through. A three-page
+ * remnant of a six-page set is indistinguishable from a genuine three-page
+ * project: it lists as Sent with a working Copy Link, and a client sent that
+ * link marks up an incomplete set with nothing anywhere saying so.
+ *
+ * Deletes the record first and the images afterwards -- the same order the two
+ * delete routes use, so a cleanup that fails part-way can never leave a project
+ * whose pages point at files that are gone. Cascade takes the document, pages
+ * and markers with the project.
+ *
+ * Best-effort throughout: whatever happens in here must not replace the error
+ * that caused the rollback, because that error is what the caller needs to see.
+ */
+async function rollbackProject(projectId: string, blobKeys: string[]) {
+  try {
+    await prisma.project.delete({ where: { id: projectId } });
+  } catch {
+    // Nothing better to do -- the caller is already being told the create failed.
+  }
+  await Promise.allSettled(blobKeys.map((key) => deleteFile(key)));
+}
+
+/** The blob key behind a stored page image, stripped the way the delete routes strip it. */
+function blobKeyOf(imagePath: string): string {
+  return imagePath.replace(/^\/uploads\//, "");
+}
+
+/** The other half of the guarantee: what is stored is what was asked for. */
+async function assertEveryPageStored(documentId: string, expected: number) {
+  const stored = await prisma.page.count({ where: { documentId } });
+  if (stored !== expected) {
+    throw new CreateFailed(`Only ${stored} of ${expected} pages could be stored.`, 500);
+  }
+}
+
+function createFailureResponse(err: unknown) {
+  if (err instanceof CreateFailed) {
+    return NextResponse.json({ error: err.message }, { status: err.status });
+  }
+  return NextResponse.json(
+    { error: err instanceof Error ? err.message : "Could not create the project." },
+    { status: 500 }
+  );
+}
+
 // Pages already uploaded directly to Blob storage by the caller — this
 // request only carries metadata + URLs, no file bytes, so it skips Vercel's
 // serverless request-body size limit entirely.
@@ -95,16 +158,24 @@ async function handleJsonBody(request: Request) {
     allowSection
   );
 
-  for (let i = 0; i < pages.length; i++) {
-    await prisma.page.create({
-      data: {
-        documentId: document.id,
-        pageNumber: i + 1,
-        imagePath: pages[i].imagePath,
-        width: Math.round(pages[i].width),
-        height: Math.round(pages[i].height),
-      },
-    });
+  try {
+    for (let i = 0; i < pages.length; i++) {
+      await prisma.page.create({
+        data: {
+          documentId: document.id,
+          pageNumber: i + 1,
+          imagePath: pages[i].imagePath,
+          width: Math.round(pages[i].width),
+          height: Math.round(pages[i].height),
+        },
+      });
+    }
+    await assertEveryPageStored(document.id, pages.length);
+  } catch (err) {
+    // These images were uploaded for this project and nothing else refers to
+    // them, so they go with it.
+    await rollbackProject(project.id, pages.map((p) => blobKeyOf(p.imagePath)));
+    return createFailureResponse(err);
   }
 
   return NextResponse.json({ id: project.id, shareToken: project.shareToken });
@@ -151,27 +222,34 @@ async function handleFormDataBody(request: Request) {
     allowSection
   );
 
-  for (let i = 0; i < meta.length; i++) {
-    const file = formData.get(`file-${i}`);
-    if (!(file instanceof File)) {
-      return NextResponse.json(
-        { error: `Missing file for page ${i}` },
-        { status: 400 }
-      );
-    }
-    const buffer = Buffer.from(await file.arrayBuffer());
-    const key = `${document.id}-${i}.png`;
-    const imagePath = await saveFile(key, buffer);
+  // Only keys that actually reached storage, so a failed saveFile does not send
+  // the rollback chasing a file that was never written.
+  const uploaded: string[] = [];
+  try {
+    for (let i = 0; i < meta.length; i++) {
+      const file = formData.get(`file-${i}`);
+      if (!(file instanceof File)) {
+        throw new CreateFailed(`Missing file for page ${i}`, 400);
+      }
+      const buffer = Buffer.from(await file.arrayBuffer());
+      const key = `${document.id}-${i}.png`;
+      const imagePath = await saveFile(key, buffer);
+      uploaded.push(key);
 
-    await prisma.page.create({
-      data: {
-        documentId: document.id,
-        pageNumber: i + 1,
-        imagePath,
-        width: Math.round(meta[i].width),
-        height: Math.round(meta[i].height),
-      },
-    });
+      await prisma.page.create({
+        data: {
+          documentId: document.id,
+          pageNumber: i + 1,
+          imagePath,
+          width: Math.round(meta[i].width),
+          height: Math.round(meta[i].height),
+        },
+      });
+    }
+    await assertEveryPageStored(document.id, meta.length);
+  } catch (err) {
+    await rollbackProject(project.id, uploaded);
+    return createFailureResponse(err);
   }
 
   return NextResponse.json({ id: project.id, shareToken: project.shareToken });
