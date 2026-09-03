@@ -221,22 +221,32 @@ for (const [what, marker] of Object.entries(NOTES)) {
   });
 }
 
-// The box's fill was the one part of the callout the two sides disagreed on,
-// and it was invisible as a bug because each looked right on its own: the plan
-// showed through on screen and was covered in the PDF. It also made the box
-// almost unselectable, since an SVG rect with fill="none" takes a pointer only
-// on its 2px border.
-test("both sides fill the callout box the same way", () => {
+// Two separate things, once conflated here and worth keeping apart.
+//
+// The fill: the export paints the box white at 0.95 and so does the editor --
+// on the rect *behind* the interactive one. That was already true, and a second
+// fill on the rect in front would stack two translucent whites and make every
+// callout quietly more opaque than the PDF's.
+//
+// The hit target: an SVG rect with fill="none" only takes a pointer along its
+// stroke, so the callout could be grabbed by its 2px border and nowhere else.
+// pointerEvents:"all" fixes that without painting anything.
+test("the callout box is painted once, and grabbable everywhere", () => {
   const editor = readFileSync(path.join(REPO, "src/components/MarkupEditor.tsx"), "utf8");
   const exporter = readFileSync(path.join(REPO, "src/lib/exportPdf.ts"), "utf8");
 
-  // The export: white, slightly see-through, so a callout does not blot out the
-  // linework it points at.
-  assert.match(exporter, /color: rgb\(1, 1, 1\),\s*\n\s*opacity: 0\.95,/,
+  assert.match(exporter, /color: rgb\(1, 1, 1\),\s*opacity: 0\.95,/,
                "the export no longer fills the callout box white at 0.95");
 
-  // The editor must say the same thing, and must not go back to fill="none",
-  // which is both a different picture and an unselectable one.
-  assert.match(editor, /fill="#ffffff"\s*\n\s*fillOpacity=\{0\.95\}/,
-               "the editor's callout box does not match the export's fill");
+  // Only the marker itself. The tool-palette icon draws the same callout at
+  // icon size and carries the same fill on purpose, so counting the whole file
+  // would always find two and this would never mean anything.
+  const rendering = editor.slice(editor.indexOf("export default function MarkupEditor"));
+  assert.ok(rendering.length > 0, "could not find the editor component");
+  const fills = rendering.match(/fill="#ffffff"\s*fillOpacity=\{0\.95\}/g) ?? [];
+  assert.equal(fills.length, 1,
+    `the callout box is painted ${fills.length} times; it should be exactly once`);
+
+  assert.match(editor, /pointerEvents: "all"/,
+    "the callout box is back to being grabbable only along its border");
 });

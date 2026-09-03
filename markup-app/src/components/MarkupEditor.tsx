@@ -168,14 +168,20 @@ function ToolIcon({ type, size = 24 }: { type: MarkerType; size?: number }) {
   // the callout reads at icon size instead of being crushed into a square.
   return (
     <svg viewBox="0 0 80 40" style={{ width: size * 1.6, height: size, flexShrink: 0 }}>
+      <line x1={9} y1={32} x2={34} y2={20} stroke="black" strokeWidth={2.6 + 1.8} />
       <line x1={9} y1={32} x2={34} y2={20} stroke={color} strokeWidth={2.6} />
-      <polygon points="9,32 19,30.5 16,23.5" fill={color} />
-      {/* Filled, like the real callout and its PDF: an outline-only box was the
-          old note marker's look and stopped matching what gets placed. The two
-          bars are what the box actually contains -- the label in the marker's
-          own colour on top, the note text under it in grey -- rather than two
-          identical grey lines standing in for "some words". */}
+      <polygon points="9,32 19,30.5 16,23.5" fill={color}
+               stroke="black" strokeWidth={0.9} strokeLinejoin="round" />
+      {/* The real callout, at icon size. Every part of it carries the black
+          casing the IE wedges and Section flags carry, so it holds up over dark
+          linework -- an icon without it was drawing a marker this app no longer
+          places. Leader cased then coloured, arrowhead outlined, box outlined in
+          black before the coloured border goes on, and the two bars inside are
+          what the box holds: the label in the marker's colour, the note text
+          under it in grey. */}
       <rect x={34} y={7} width={38} height={22} rx={3} fill="#ffffff" fillOpacity={0.95}
+            stroke="black" strokeWidth={2.6 + 1.8} />
+      <rect x={34} y={7} width={38} height={22} rx={3} fill="none"
             stroke={color} strokeWidth={2.6} />
       <line x1={39} y1={14} x2={58} y2={14} stroke={color} strokeWidth={2.6} />
       <line x1={39} y1={21} x2={66} y2={21} stroke="#6b7280" strokeWidth={2} opacity={0.75} />
@@ -1646,19 +1652,20 @@ export default function MarkupEditor({
                       width={boxW}
                       height={boxH}
                       rx={unit * 0.8}
-                      /* White at 95%, exactly as exportPdf draws it. Two reasons,
-                         and either alone would be enough. The export has always
-                         filled this box, so an unfilled one on screen meant the
-                         plan showed through while marking up and was hidden in the
-                         deliverable -- the one thing this renderer is supposed to
-                         guarantee it does not do. And `fill="none"` is not a hit
-                         target, so the box could only be grabbed by its 2px
-                         border; the interior now takes the pointer too. */
-                      fill="#ffffff"
-                      fillOpacity={0.95}
+                      /* Unfilled, because the rect behind this one already paints
+                         the box white at 95% -- filling here too would stack two
+                         translucent whites and quietly make every callout more
+                         opaque than the PDF's.
+
+                         `pointerEvents: "all"` is the part that matters: with
+                         fill="none" a rect is only a hit target along its stroke,
+                         so a callout could be grabbed by its 2px border and
+                         nowhere else. This takes the pointer across the whole box
+                         without painting anything. */
+                      fill="none"
                       stroke={color}
                       strokeWidth={unit * 0.6}
-                      style={grab}
+                      style={{ ...grab, pointerEvents: "all" }}
                       onPointerDown={(e) => handleRevisionBoxPointerDown(e, m.id)}
                       onPointerMove={handleDragMove}
                       onPointerUp={handleDragEnd}
