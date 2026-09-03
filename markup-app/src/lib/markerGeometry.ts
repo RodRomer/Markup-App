@@ -100,3 +100,63 @@ export function sectionFlagPolygonPoints(
   const [x, y] = endpoint === "start" ? [x1, y1] : [x2, y2];
   return arrowWedgePoints(x, y, viewDeg, size);
 }
+
+/** How far the arrowhead's barbs sweep back from its axis, in radians. */
+const ARROW_HALF_ANGLE = 0.42;
+
+/**
+ * How much thinner an outline is than the line it cases.
+ *
+ * Every marker carries a black casing so it holds up over dark linework. One
+ * ratio, so the IE wedges, the section line and the revision leader are outlined
+ * to the same weight rather than three independently chosen ones.
+ */
+export const MARKER_OUTLINE_RATIO = 0.35;
+
+/**
+ * The leader from a revision callout to the thing it points at.
+ *
+ * Three parts that have to agree, which is why they are worked out together:
+ * where the line leaves the box, where it stops, and the arrowhead it stops
+ * against. The line ends at the arrowhead's *base*, not at the tip -- drawn to
+ * the tip it shows through and around the head, which is exactly what the tool
+ * palette's icon was doing after it was drawn by hand from the same description.
+ */
+export function revisionLeader(
+  tip: Point,
+  box: { x: number; y: number; width: number; height: number },
+  arrowLength: number
+): { start: Point; end: Point; arrow: Point[] } {
+  const cx = box.x + box.width / 2;
+  const cy = box.y + box.height / 2;
+  const dx = tip.x - cx;
+  const dy = tip.y - cy;
+
+  // Where the line from the box's centre crosses its edge.
+  const clip = Math.min(
+    Math.abs(dx) > 1e-6 ? box.width / 2 / Math.abs(dx) : Infinity,
+    Math.abs(dy) > 1e-6 ? box.height / 2 / Math.abs(dy) : Infinity
+  );
+  const start = { x: cx + dx * Math.min(1, clip), y: cy + dy * Math.min(1, clip) };
+
+  const angle = Math.atan2(tip.y - start.y, tip.x - start.x);
+  const arrow = [
+    tip,
+    {
+      x: tip.x - arrowLength * Math.cos(angle - ARROW_HALF_ANGLE),
+      y: tip.y - arrowLength * Math.sin(angle - ARROW_HALF_ANGLE),
+    },
+    {
+      x: tip.x - arrowLength * Math.cos(angle + ARROW_HALF_ANGLE),
+      y: tip.y - arrowLength * Math.sin(angle + ARROW_HALF_ANGLE),
+    },
+  ];
+
+  const headBack = arrowLength * Math.cos(ARROW_HALF_ANGLE);
+  const end = {
+    x: tip.x - headBack * Math.cos(angle),
+    y: tip.y - headBack * Math.sin(angle),
+  };
+
+  return { start, end, arrow };
+}

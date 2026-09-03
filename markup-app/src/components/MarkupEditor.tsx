@@ -15,6 +15,8 @@ import {
 } from "@/lib/markerTypes";
 import {
   arrowTipPoint,
+  MARKER_OUTLINE_RATIO,
+  revisionLeader,
   arrowWedgePoints,
   DOT_RADIUS_FACTOR,
   MARKER_LINE_FACTOR,
@@ -119,6 +121,14 @@ function SelectionHalo({ cx, cy, r, w }: { cx: number; cy: number; r: number; w:
   );
 }
 
+// The weights every icon is cased at. A marker holds up over dark linework
+// because each part is drawn twice, black underneath and colour on top; an icon
+// that skips it is drawing a marker this app does not place. One ratio, shared
+// with the real markers, rather than a number picked per shape.
+const ICON_LINE_W = 2.6;
+const ICON_OUTLINE = ICON_LINE_W * MARKER_OUTLINE_RATIO;
+const ICON_CASING_W = ICON_LINE_W + ICON_OUTLINE * 2;
+
 function ToolIcon({ type, size = 24 }: { type: MarkerType; size?: number }) {
   const color = MARKER_TYPE_INFO[type].color;
   const boxStyle = { width: size, height: size, flexShrink: 0 };
@@ -148,7 +158,11 @@ function ToolIcon({ type, size = 24 }: { type: MarkerType; size?: number }) {
     const wedgeSize = ICON_WEDGE_SIZE;
     return (
       <svg viewBox="0 0 80 40" style={{ width: size * 2, height: size, flexShrink: 0 }}>
-        <line x1={10} y1={20} x2={70} y2={20} stroke={color} strokeWidth={2.4} />
+        {/* Cased then coloured, the way the real section line is drawn. Without
+            the black underneath this was the one marker whose icon did not
+            match what it places. */}
+        <line x1={10} y1={20} x2={70} y2={20} stroke="black" strokeWidth={ICON_CASING_W} />
+        <line x1={10} y1={20} x2={70} y2={20} stroke={color} strokeWidth={ICON_LINE_W} />
         {(["start", "end"] as const).map((endpoint) => (
           <polygon
             key={endpoint}
@@ -164,27 +178,34 @@ function ToolIcon({ type, size = 24 }: { type: MarkerType; size?: number }) {
       </svg>
     );
   }
-  // A revision is a leader into a text box, so the icon shows that rather than the
-  // plain dot it inherited from the old note marker. Wider viewBox like SECTION so
-  // the callout reads at icon size instead of being crushed into a square.
+  // A revision is a leader into a text box. The box below is the icon's own
+  // layout; everything about the leader -- where it leaves the box, where it
+  // stops, and the arrowhead it stops against -- comes from revisionLeader, the
+  // same function the real callout uses.
+  //
+  // That link is the point. Drawn by hand this icon ran its line all the way to
+  // the tip, so the leader showed through and around the arrowhead: precisely
+  // the bug the real marker had fixed, reintroduced by copying the description
+  // rather than the code.
+  const box = { x: 34, y: 7, width: 38, height: 22 };
+  const leader = revisionLeader({ x: 9, y: 32 }, box, 11);
   return (
     <svg viewBox="0 0 80 40" style={{ width: size * 1.6, height: size, flexShrink: 0 }}>
-      <line x1={9} y1={32} x2={34} y2={20} stroke="black" strokeWidth={2.6 + 1.8} />
-      <line x1={9} y1={32} x2={34} y2={20} stroke={color} strokeWidth={2.6} />
-      <polygon points="9,32 19,30.5 16,23.5" fill={color}
-               stroke="black" strokeWidth={0.9} strokeLinejoin="round" />
-      {/* The real callout, at icon size. Every part of it carries the black
-          casing the IE wedges and Section flags carry, so it holds up over dark
-          linework -- an icon without it was drawing a marker this app no longer
-          places. Leader cased then coloured, arrowhead outlined, box outlined in
-          black before the coloured border goes on, and the two bars inside are
-          what the box holds: the label in the marker's colour, the note text
-          under it in grey. */}
-      <rect x={34} y={7} width={38} height={22} rx={3} fill="#ffffff" fillOpacity={0.95}
-            stroke="black" strokeWidth={2.6 + 1.8} />
-      <rect x={34} y={7} width={38} height={22} rx={3} fill="none"
-            stroke={color} strokeWidth={2.6} />
-      <line x1={39} y1={14} x2={58} y2={14} stroke={color} strokeWidth={2.6} />
+      <line x1={leader.start.x} y1={leader.start.y} x2={leader.end.x} y2={leader.end.y}
+            stroke="black" strokeWidth={ICON_CASING_W} />
+      <line x1={leader.start.x} y1={leader.start.y} x2={leader.end.x} y2={leader.end.y}
+            stroke={color} strokeWidth={ICON_LINE_W} />
+      <polygon points={toSvgPoints(leader.arrow)} fill={color}
+               stroke="black" strokeWidth={ICON_OUTLINE} strokeLinejoin="round" />
+      {/* Outlined in black before the coloured border goes on, like every other
+          part of a marker, and filled the way the real callout and the PDF fill
+          it. The two bars are what the box holds: the label in the marker's own
+          colour, the note text under it in grey. */}
+      <rect x={box.x} y={box.y} width={box.width} height={box.height} rx={3}
+            fill="#ffffff" fillOpacity={0.95} stroke="black" strokeWidth={ICON_CASING_W} />
+      <rect x={box.x} y={box.y} width={box.width} height={box.height} rx={3}
+            fill="none" stroke={color} strokeWidth={ICON_LINE_W} />
+      <line x1={39} y1={14} x2={58} y2={14} stroke={color} strokeWidth={ICON_LINE_W} />
       <line x1={39} y1={21} x2={66} y2={21} stroke="#6b7280" strokeWidth={2} opacity={0.75} />
     </svg>
   );
@@ -1557,31 +1578,18 @@ export default function MarkupEditor({
 
                 // Leader starts where the box's edge meets the line to the tip, so it
                 // touches the box rather than emerging from under its middle.
-                const bcx = bx + boxW / 2;
-                const bcy = by + boxH / 2;
-                const ddx = tipX - bcx;
-                const ddy = tipY - bcy;
-                const clip = Math.min(
-                  Math.abs(ddx) > 1e-6 ? boxW / 2 / Math.abs(ddx) : Infinity,
-                  Math.abs(ddy) > 1e-6 ? boxH / 2 / Math.abs(ddy) : Infinity
+                // Where the leader leaves the box, where it stops short of the
+                // arrowhead, and the head itself -- worked out in markerGeometry
+                // so the tool palette's icon draws the same thing rather than a
+                // hand copy of it that drifts.
+                const leader = revisionLeader(
+                  { x: tipX, y: tipY },
+                  { x: bx, y: by, width: boxW, height: boxH },
+                  unit * 3.2
                 );
-                const edgeX = bcx + ddx * Math.min(1, clip);
-                const edgeY = bcy + ddy * Math.min(1, clip);
-                const ang = Math.atan2(tipY - edgeY, tipX - edgeX);
-                const ah = unit * 3.2;
-                const arrowPoints = [
-                  [tipX, tipY],
-                  [tipX - ah * Math.cos(ang - 0.42), tipY - ah * Math.sin(ang - 0.42)],
-                  [tipX - ah * Math.cos(ang + 0.42), tipY - ah * Math.sin(ang + 0.42)],
-                ]
-                  .map(([px, py]) => `${px},${py}`)
-                  .join(" ");
-
-                // Stop the leader at the arrowhead's base instead of running it to the
-                // tip -- drawn to the tip it showed through and around the head.
-                const headBack = ah * Math.cos(0.42);
-                const lineEndX = tipX - headBack * Math.cos(ang);
-                const lineEndY = tipY - headBack * Math.sin(ang);
+                const { x: edgeX, y: edgeY } = leader.start;
+                const { x: lineEndX, y: lineEndY } = leader.end;
+                const arrowPoints = toSvgPoints(leader.arrow);
 
                 const grab = {
                   pointerEvents: locked ? ("none" as const) : ("auto" as const),

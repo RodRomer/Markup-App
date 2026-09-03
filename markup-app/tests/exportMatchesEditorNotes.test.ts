@@ -61,14 +61,15 @@ const H = 2200;
 async function editorNoteGeometry(marker: Record<string, unknown>, lib: Record<string, unknown>) {
   const source = readFileSync(EDITOR, "utf8").split(CR + NL).join(NL);
   const START = "                const unit = activePage.width * 0.004;";
-  const END = "                const lineEndY = tipY - headBack * Math.sin(ang);";
+  const END = "                const arrowPoints = toSvgPoints(leader.arrow);";
   const from = source.indexOf(START);
   const to = source.indexOf(END);
   assert.notEqual(from, -1, "the note block no longer starts where this expects");
   assert.notEqual(to, -1, "the note block no longer ends where this expects");
   assert.ok(to > from, "the note block's anchors are the wrong way round");
   const block = source.slice(from, to + END.length);
-  for (const needle of ["revisionBoxPosition(m)", "wrapToWidth(", "const boxH =", "const arrowPoints ="]) {
+  for (const needle of ["revisionBoxPosition(m)", "wrapToWidth(", "const boxH =",
+                        "revisionLeader(", "const arrowPoints ="]) {
     assert.ok(block.includes(needle), `the lifted block has no ${needle} -- wrong text`);
   }
 
@@ -78,10 +79,11 @@ async function editorNoteGeometry(marker: Record<string, unknown>, lib: Record<s
   const module_ = [
     "export function compute(scope) {",
     "  const { activePage, m, revisionBoxPosition, helveticaWidth, wrapToWidth,",
-    "          REVISION_TEXT_WIDTH, MARKER_TYPE_INFO, selectedMarkerId } = scope;",
+    "          REVISION_TEXT_WIDTH, MARKER_TYPE_INFO, selectedMarkerId,",
+    "          revisionLeader, toSvgPoints } = scope;",
     block,
     "  return { unit, tipX, tipY, bx, by, fontSize, pad, lines, lineH, boxW, boxH,",
-    "           edgeX, edgeY, ang, arrowPoints, lineEndX, lineEndY };",
+    "           edgeX, edgeY, arrowPoints, lineEndX, lineEndY };",
     "}",
   ].join(NL);
   const dir = mkdtempSync(path.join(REPO, ".notes-lift-"));

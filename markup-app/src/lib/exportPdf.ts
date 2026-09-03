@@ -5,6 +5,7 @@ import {
   arrowWedgePoints,
   DOT_RADIUS_FACTOR,
   MARKER_LINE_FACTOR,
+  revisionLeader,
   REVISION_TEXT_WIDTH,
   sectionFlagPolygonPoints,
 } from "./markerGeometry";
@@ -176,27 +177,19 @@ export async function generateProjectPdf(project: ProjectData): Promise<Uint8Arr
       const boxW = m.boxWidth != null ? m.boxWidth * pageData.width : autoW;
       const boxH = pad * 2 + lineH * rows.length;
 
-      // leader clipped at the box edge, same as on screen
-      const bcx = bx + boxW / 2;
-      const bcy = by + boxH / 2;
-      const ddx = tipX - bcx;
-      const ddy = tipY - bcy;
-      const clip = Math.min(
-        Math.abs(ddx) > 1e-6 ? boxW / 2 / Math.abs(ddx) : Infinity,
-        Math.abs(ddy) > 1e-6 ? boxH / 2 / Math.abs(ddy) : Infinity
+      // Where the leader leaves the box, where it stops short of the arrowhead,
+      // and the head itself. This used to be worked out here as well as on
+      // screen and again in the tool palette's icon -- three copies of one
+      // drawing, which is how the icon ended up running its line through the
+      // arrowhead long after the other two had stopped doing that.
+      const leader = revisionLeader(
+        { x: tipX, y: tipY },
+        { x: bx, y: by, width: boxW, height: boxH },
+        unit * 3.2
       );
-      const edgeX = bcx + ddx * Math.min(1, clip);
-      const edgeY = bcy + ddy * Math.min(1, clip);
-
-      const ang = Math.atan2(tipY - edgeY, tipX - edgeX);
-      const ah = unit * 3.2;
+      const { x: edgeX, y: edgeY } = leader.start;
+      const { x: lineEndX, y: lineEndY } = leader.end;
       const outline = unit * 0.13;
-
-      // The leader stops at the arrowhead's base -- run to the tip it showed through
-      // the head. Cased in black first, matching the outline the other markers carry.
-      const headBack = ah * Math.cos(0.42);
-      const lineEndX = tipX - headBack * Math.cos(ang);
-      const lineEndY = tipY - headBack * Math.sin(ang);
       for (const [thickness, c] of [
         [pageData.width * MARKER_LINE_FACTOR + outline * 2, rgb(0, 0, 0)] as const,
         [pageData.width * MARKER_LINE_FACTOR, color] as const,
@@ -210,11 +203,7 @@ export async function generateProjectPdf(project: ProjectData): Promise<Uint8Arr
       }
 
       pdfPage.drawSvgPath(
-        pointsToSvgPath([
-          { x: tipX, y: tipY },
-          { x: tipX - ah * Math.cos(ang - 0.42), y: tipY - ah * Math.sin(ang - 0.42) },
-          { x: tipX - ah * Math.cos(ang + 0.42), y: tipY - ah * Math.sin(ang + 0.42) },
-        ]),
+        pointsToSvgPath(leader.arrow),
         { x: 0, y: pageData.height, color, borderColor: rgb(0, 0, 0), borderWidth: outline }
       );
 
