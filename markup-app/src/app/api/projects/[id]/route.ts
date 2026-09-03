@@ -39,9 +39,22 @@ export async function PATCH(
   const { id } = await params;
   const body = await request.json();
 
-  const data: { allowIE?: boolean; allowSection?: boolean; pricePerIE?: number | null } = {};
+  const data: {
+    name?: string; allowIE?: boolean; allowSection?: boolean; pricePerIE?: number | null;
+  } = {};
   if (typeof body.allowIE === "boolean") data.allowIE = body.allowIE;
   if (typeof body.allowSection === "boolean") data.allowSection = body.allowSection;
+
+  // Absent leaves the name alone. Present but blank is a mistake rather than an
+  // instruction -- a project with no name is unfindable in every list it
+  // appears in -- so it is refused rather than saved.
+  if (body.name !== undefined) {
+    const name = typeof body.name === "string" ? body.name.trim() : "";
+    if (!name) {
+      return NextResponse.json({ error: "A project needs a name." }, { status: 400 });
+    }
+    data.name = name;
+  }
 
   // Three states, and they have to stay three. Absent leaves the price alone;
   // null clears it, so the client sees no pricing at all; 0 is a stated
@@ -62,6 +75,7 @@ export async function PATCH(
   }
   const project = await prisma.project.update({ where: { id }, data });
   return NextResponse.json({
+    name: project.name,
     allowIE: project.allowIE,
     allowSection: project.allowSection,
     pricePerIE: project.pricePerIE,

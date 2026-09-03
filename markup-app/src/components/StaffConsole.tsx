@@ -68,7 +68,9 @@ function hasUnseenActivity(project: Project, seen: Record<string, string>): bool
   return new Date(project.lastActivityAt) > new Date(seen[project.id] ?? project.createdAt);
 }
 
-const shortDate = (iso: string) => new Date(iso).toLocaleDateString();
+/** One grid, used by the header row and every project row, so a long project
+ *  name cannot push the columns out of line with the ones above and below it. */
+const ROW_GRID = "grid grid-cols-[minmax(0,1fr)_4.5rem_4.5rem_9rem_5rem] items-baseline gap-3";
 const dateAndTime = (iso: string) =>
   new Date(iso).toLocaleString(undefined, {
     month: "short", day: "numeric", hour: "numeric", minute: "2-digit",
@@ -113,6 +115,9 @@ export default function StaffConsole() {
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
   const [priceDraft, setPriceDraft] = useState("");
   const [creating, setCreating] = useState(false);
+  // Most recently touched first, because the reason to open this list is
+  // almost always "what has moved".
+  const [sortBy, setSortBy] = useState<"updated" | "name">("updated");
 
   useEffect(() => setSession(readStoredSession()), []);
   useEffect(() => setSeen(readSeen()), []);
@@ -525,8 +530,40 @@ export default function StaffConsole() {
         </p>
       )}
 
+      <div className="mb-2 flex items-center justify-between gap-3">
+        <span className="text-[11px] uppercase tracking-[0.6px] text-[#6a6a6a]">
+          {(projects ?? []).length} project{(projects ?? []).length === 1 ? "" : "s"}
+        </span>
+        <label className="flex items-center gap-2 text-xs text-[#8c8c8c]">
+          Sort
+          <select
+            value={sortBy}
+            onChange={(e) => setSortBy(e.target.value as "updated" | "name")}
+            className="rounded-lg border border-[#474747] bg-[#1f1f1f] px-2 py-1 text-xs text-[#f2f2f2]"
+          >
+            <option value="updated">Recently updated</option>
+            <option value="name">Name</option>
+          </select>
+        </label>
+      </div>
+
+      {/* Titles, so a column of bare numbers says what it counts. */}
+      <div className={ROW_GRID + " px-3 pb-1 text-[10px] uppercase tracking-[0.6px] text-[#6a6a6a]"}>
+        <span>Project</span>
+        <span>IE views</span>
+        <span>Markers</span>
+        <span>Updated</span>
+        <span className="text-right">Status</span>
+      </div>
+
       <div className="flex flex-col gap-2">
-        {(projects ?? []).map((project) => {
+        {[...(projects ?? [])]
+          .sort((a, b) =>
+            sortBy === "name"
+              ? a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: "base" })
+              : new Date(b.lastActivityAt).getTime() - new Date(a.lastActivityAt).getTime()
+          )
+          .map((project) => {
           const unseen = hasUnseenActivity(project, seen);
           return (
           <button
@@ -544,30 +581,28 @@ export default function StaffConsole() {
               })
             }
           >
-            <div className="flex items-baseline justify-between gap-3">
-              <span className="font-medium">
+            <div className={ROW_GRID}>
+              {/* min-w-0 lets truncate actually bite: without it the name is
+                  allowed to be as wide as it likes and takes the row with it. */}
+              <span className="flex min-w-0 items-baseline gap-2 font-medium">
                 {unseen && (
                   <span
                     title="Changed since you last opened this"
                     aria-label="Changed since you last opened this"
-                    className="mr-2 inline-flex h-4 w-4 items-center justify-center rounded-full bg-[#f78645] text-[10px] font-bold text-[#171717]"
+                    className="inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-[#f78645] text-[10px] font-bold text-[#171717]"
                   >
                     !
                   </span>
                 )}
-                {project.name}
+                <span className="truncate" title={project.name}>{project.name}</span>
               </span>
-              <span className="shrink-0 text-xs text-[#8c8c8c]">{project.status}</span>
+              <span className="text-xs text-[#8c8c8c]">{project.ieViewCount ?? 0}</span>
+              <span className="text-xs text-[#8c8c8c]">{project.markerCount ?? 0}</span>
+              <span className={"text-xs " + (unseen ? "text-[#f78645]" : "text-[#8c8c8c]")}>
+                {dateAndTime(project.lastActivityAt)}
+              </span>
+              <span className="text-right text-xs text-[#8c8c8c]">{project.status}</span>
             </div>
-            <span className="text-xs text-[#8c8c8c]">
-              {project.ieCount ?? 0} IE marker{project.ieCount === 1 ? "" : "s"} &middot;{" "}
-              {project.ieViewCount ?? 0} view{project.ieViewCount === 1 ? "" : "s"} &middot;{" "}
-              {project.markerCount ?? 0} marker{project.markerCount === 1 ? "" : "s"} total
-            </span>
-            <span className={"text-xs " + (unseen ? "text-[#f78645]" : "text-[#8c8c8c]")}>
-              Created {shortDate(project.createdAt)} &middot; Updated{" "}
-              {dateAndTime(project.lastActivityAt)}
-            </span>
           </button>
           );
         })}
