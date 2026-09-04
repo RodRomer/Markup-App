@@ -25,6 +25,7 @@ export async function GET(request: Request) {
         id: project.id,
         name: project.name,
         status: project.status,
+        projectNumber: project.projectNumber,
         createdAt: project.createdAt.toISOString(),
         lastActivityAt: project.lastActivityAt.toISOString(),
         markerCount: allMarkers.length,
@@ -56,10 +57,14 @@ async function createProjectAndDocument(
   allowIE: boolean,
   pricePerIE: number | null,
   allowSection: boolean,
-  teamId: string
+  teamId: string,
+  projectNumber: string | null
 ) {
   const project = await prisma.project.create({
-    data: { name: name.trim(), status: "sent", allowIE, allowSection, pricePerIE, teamId },
+    data: {
+      name: name.trim(), status: "sent", allowIE, allowSection, pricePerIE, teamId,
+      projectNumber,
+    },
   });
   const document = await prisma.document.create({
     data: { projectId: project.id, originalFilename, kind },
@@ -136,12 +141,13 @@ function createFailureResponse(err: unknown) {
 async function handleJsonBody(request: Request, teamId: string) {
   const body = await request.json();
   const { name, kind, originalFilename, allowIE = true, allowSection = true,
-          pricePerIE = null, pages } = body as {
+          pricePerIE = null, projectNumber = null, pages } = body as {
     name?: string;
     kind?: string;
     originalFilename?: string;
     allowIE?: boolean;
     pricePerIE?: number | null;
+    projectNumber?: string | null;
     allowSection?: boolean;
     pages?: UploadedPage[];
   };
@@ -164,7 +170,8 @@ async function handleJsonBody(request: Request, teamId: string) {
     allowIE,
     pricePerIE,
     allowSection,
-    teamId
+    teamId,
+    projectNumber
   );
 
   try {
@@ -210,6 +217,8 @@ async function handleFormDataBody(request: Request, teamId: string) {
   const allowSection = formData.get("allowSection") !== "false";
   // Absent, blank or unparseable all mean "this project shows no pricing".
   // Zero is a real answer and is kept, which is why this is not `|| null`.
+  const numberRaw = formData.get("projectNumber");
+  const projectNumber = typeof numberRaw === "string" && numberRaw.trim() ? numberRaw.trim() : null;
   const priceRaw = formData.get("pricePerIE");
   const priceNum = typeof priceRaw === "string" && priceRaw.trim() !== "" ? Number(priceRaw) : NaN;
   const pricePerIE = Number.isFinite(priceNum) && priceNum >= 0 ? priceNum : null;
@@ -236,7 +245,8 @@ async function handleFormDataBody(request: Request, teamId: string) {
     allowIE,
     pricePerIE,
     allowSection,
-    teamId
+    teamId,
+    projectNumber
   );
 
   // Only keys that actually reached storage, so a failed saveFile does not send

@@ -19,6 +19,7 @@ type Project = {
   status: string;
   createdAt: string;
   lastActivityAt: string;
+  projectNumber?: string | null;
   markerCount?: number;
   ieCount?: number;
   /** View directions, not markers -- what a price is multiplied by. */
@@ -595,6 +596,9 @@ export default function StaffConsole() {
                   </span>
                 )}
                 <span className="truncate" title={project.name}>{project.name}</span>
+                {project.projectNumber && (
+                  <span className="shrink-0 text-xs text-[#6a6a6a]">#{project.projectNumber}</span>
+                )}
               </span>
               <span className="text-xs text-[#8c8c8c]">{project.ieViewCount ?? 0}</span>
               <span className="text-xs text-[#8c8c8c]">{project.markerCount ?? 0}</span>

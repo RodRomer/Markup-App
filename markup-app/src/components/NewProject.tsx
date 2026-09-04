@@ -41,6 +41,7 @@ export default function NewProject({
   const [allowIE, setAllowIE] = useState(true);
   const [allowSection, setAllowSection] = useState(true);
   const [price, setPrice] = useState("");
+  const [projectNumber, setProjectNumber] = useState("");
   const [step, setStep] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [dragging, setDragging] = useState(false);
@@ -110,6 +111,9 @@ export default function NewProject({
           allowIE,
           allowSection,
           pricePerIE,
+          // Blank sends null rather than "": having no number is a real state,
+          // and an empty string would be a link to nothing that looks like one.
+          projectNumber: projectNumber.trim() || null,
           pages: uploaded,
         }),
       });
@@ -142,6 +146,22 @@ export default function NewProject({
           disabled={busy}
           onChange={(e) => setName(e.target.value)}
         />
+
+        {/* Kept apart from the name. The name is what the job is called; this is
+            what Keap knows it by, and reading one out of the other means
+            guessing. */}
+        <label className="flex items-center gap-3 text-sm text-[#b2b2b2]">
+          <input
+            className={FIELD + " w-40"}
+            placeholder="PPM number"
+            value={projectNumber}
+            disabled={busy}
+            onChange={(e) => setProjectNumber(e.target.value)}
+          />
+          <span className="text-xs text-[#6a6a6a]">
+            optional — links this markup to Keap
+          </span>
+        </label>
 
         {/* A label wrapping the input, so the whole panel is the click target as
             well as the drop target -- a drop zone you cannot click is a puzzle,

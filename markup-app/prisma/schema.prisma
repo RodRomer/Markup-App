@@ -15,6 +15,14 @@ datasource db {
 model Project {
   id           String    @id @default(cuid())
   name         String
+  /// The PPM project number, for linking this markup to its Keap opportunity.
+  ///
+  /// Kept apart from the name on purpose. The name is what a person calls the
+  /// job -- "Bay Area Retail Fit-out" -- and deriving a number from it means
+  /// guessing, which is exactly what puts "Delivered" beside a live project.
+  /// Nullable: everything created before this field existed has no number, and
+  /// falls back to whatever can be read off its name.
+  projectNumber String?
   shareToken   String    @unique @default(cuid())
   status       String    @default("draft") // draft | sent | submitted
   allowIE      Boolean   @default(true)

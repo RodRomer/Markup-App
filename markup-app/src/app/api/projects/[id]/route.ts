@@ -40,8 +40,16 @@ export async function PATCH(
   const body = await request.json();
 
   const data: {
-    name?: string; allowIE?: boolean; allowSection?: boolean; pricePerIE?: number | null;
+    name?: string; projectNumber?: string | null;
+    allowIE?: boolean; allowSection?: boolean; pricePerIE?: number | null;
   } = {};
+
+  // Absent leaves it alone; blank clears it, which is how a number entered by
+  // mistake is taken back off. Unlike the name, having none is a real state.
+  if (body.projectNumber !== undefined) {
+    const trimmed = typeof body.projectNumber === "string" ? body.projectNumber.trim() : "";
+    data.projectNumber = trimmed || null;
+  }
   if (typeof body.allowIE === "boolean") data.allowIE = body.allowIE;
   if (typeof body.allowSection === "boolean") data.allowSection = body.allowSection;
 
@@ -76,6 +84,7 @@ export async function PATCH(
   const project = await prisma.project.update({ where: { id }, data });
   return NextResponse.json({
     name: project.name,
+    projectNumber: project.projectNumber,
     allowIE: project.allowIE,
     allowSection: project.allowSection,
     pricePerIE: project.pricePerIE,
