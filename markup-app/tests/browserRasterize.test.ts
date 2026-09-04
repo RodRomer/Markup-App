@@ -12,7 +12,9 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import test from "node:test";
 
-import { DISPLAY_MAX_WIDTH, RASTER_DPI } from "../src/lib/rasterizeInBrowser.ts";
+// Read from pageSize rather than from the rasterizer that re-exports them:
+// the rasterizer loads pdf.js, and this only needs the two numbers.
+import { DISPLAY_MAX_WIDTH, RASTER_DPI } from "../src/lib/pageSize.ts";
 import { safeStem } from "../src/lib/blobKeys.ts";
 
 const REPO = path.resolve(import.meta.dirname, "..");

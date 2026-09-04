@@ -10,6 +10,7 @@
 // recorder, and compares every drawn coordinate against what the editor's own
 // formulas produce for the same marker.
 import assert from "node:assert/strict";
+import { pointsFromPixels } from "../src/lib/pageSize.ts";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import test from "node:test";
@@ -60,8 +61,15 @@ function toPath(points: { x: number; y: number }[]) {
     rest.map((p) => "L " + p.x + " " + p.y).join(" ") + " Z";
 }
 
+// The page as it is stored: a pixel count.
 const W = 1700;
 const H = 2200;
+// The page as it is printed. The export works in points now -- a stored pixel
+// count handed to addPage came out as a 100-inch sheet -- and every formula on
+// both sides is width times a factor, so feeding the editor's the printed width
+// yields the printed geometry and the comparison still means what it meant.
+const PW = pointsFromPixels(W);
+const PH = pointsFromPixels(H);
 const IE = { id: "m1", pageId: "p1", type: "IE", x: 0.25, y: 0.4, x2: null, y2: null,
              label: "IE 1", note: null, boxWidth: null, flipped: false,
              // 217 on purpose: an axis-aligned set would survive a swapped
@@ -80,7 +88,8 @@ async function recordAnExport() {
   try {
     mkdirSync(path.join(work, "lib"), { recursive: true });
     writeFileSync(path.join(work, "lib", "shim.ts"), SHIM, "utf8");
-    for (const f of ["exportPdf.ts", "markerGeometry.ts", "markerTypes.ts", "types.ts", "money.ts"]) {
+    for (const f of ["exportPdf.ts", "markerGeometry.ts", "markerTypes.ts", "types.ts", "money.ts",
+                     "pageSize.ts"]) {
       let text = readFileSync(path.join(LIB, f), "utf8");
       const before = text;
       // Node's resolver wants the extension on a relative .ts import; the
@@ -136,24 +145,25 @@ test("the export draws each marker where the editor computes it", async () => {
   // at zoom 1 it is 1, which is the only place the two can be compared.
   const markerScale = 1 / Math.min(2.5, Math.max(0.7, 1));
   assert.equal(markerScale, 1);
-  const size = W * 0.008 * markerScale;
-  const flagSize = W * 0.01 * markerScale;
+  const size = PW * 0.008 * markerScale;
+  const flagSize = PW * 0.01 * markerScale;
 
   const expected = [
     ...IE.directions.map((angle) => ({
       what: `IE wedge ${angle}deg`,
-      path: toPath(geom.arrowWedgePoints(IE.x * W, IE.y * H, angle, size)),
+      path: toPath(geom.arrowWedgePoints(IE.x * PW, IE.y * PH, angle, size)),
     })),
     ...(["start", "end"] as const).map((endpoint) => ({
       what: `section flag ${endpoint}`,
       path: toPath(geom.sectionFlagPolygonPoints(
-        SECTION.x * W, SECTION.y * H, SECTION.x2 * W, SECTION.y2 * H,
+        SECTION.x * PW, SECTION.y * PH, SECTION.x2 * PW, SECTION.y2 * PH,
         endpoint, SECTION.flipped, flagSize)),
     })),
   ];
 
   const drawn = calls.filter((c) => c.fn === "drawSvgPath");
-  assert.deepEqual((calls.find((c) => c.fn === "addPage")?.args ?? [])[0], [W, H]);
+  // The sheet itself, at printable size rather than at its pixel count.
+  assert.deepEqual((calls.find((c) => c.fn === "addPage")?.args ?? [])[0], [PW, PH]);
 
   for (const want of expected) {
     const hit = drawn.find((c) => c.args[0] === want.path);
@@ -164,12 +174,12 @@ test("the export draws each marker where the editor computes it", async () => {
     // are the transform; the same object also carries the colours.
     const origin = hit.args[1] as { x: number; y: number };
     assert.equal(origin.x, 0, `${want.what} was drawn from a different origin`);
-    assert.equal(origin.y, H, `${want.what} was drawn from a different origin`);
+    assert.equal(origin.y, PH, `${want.what} was drawn from a different origin`);
   }
 
   const dot = calls.find((c) => c.fn === "drawEllipse")?.args[0] as { x: number; y: number };
-  assert.equal(dot.x, IE.x * W);
-  assert.equal(dot.y, H - IE.y * H, "the IE dot is not the mirror of where the editor draws it");
+  assert.equal(dot.x, IE.x * PW);
+  assert.equal(dot.y, PH - IE.y * PH, "the IE dot is not the mirror of where the editor draws it");
 });
 
 test("neither renderer keeps its own copy of a shared constant", async () => {

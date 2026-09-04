@@ -10,6 +10,7 @@ import {
   sectionFlagPolygonPoints,
 } from "./markerGeometry";
 import { helveticaWidth, MARKER_TYPE_INFO, revisionBoxPosition, wrapToWidth } from "./markerTypes";
+import { pointsFromPixels } from "./pageSize";
 import type { MarkerData, ProjectData } from "./types";
 
 const LETTER: [number, number] = [612, 792];
@@ -66,7 +67,17 @@ export async function generateProjectPdf(project: ProjectData): Promise<Uint8Arr
   const imageBytesByPage = await Promise.all(project.pages.map((p) => loadImageBytes(p.imagePath)));
 
   for (let pageIndex = 0; pageIndex < project.pages.length; pageIndex++) {
-    const pageData = project.pages[pageIndex];
+    // Converted here rather than at each of the twenty-odd places below that
+    // build a marker out of the page's width. Everything downstream is in points
+    // from this line on, which is what addPage and drawImage want -- and because
+    // every marker is a fraction of page width, converting the page converts the
+    // markers with it, so nothing moves relative to the drawing.
+    const storedPage = project.pages[pageIndex];
+    const pageData = {
+      ...storedPage,
+      width: pointsFromPixels(storedPage.width),
+      height: pointsFromPixels(storedPage.height),
+    };
     const imageBytes = imageBytesByPage[pageIndex];
     const image = isJpeg(imageBytes)
       ? await pdfDoc.embedJpg(imageBytes)

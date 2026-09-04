@@ -1,5 +1,7 @@
 import * as pdfjs from "pdfjs-dist";
 
+import { DISPLAY_MAX_WIDTH, RASTER_DPI } from "./pageSize";
+
 /**
  * Turning a site plan into the page images the app stores, in the browser.
  *
@@ -15,16 +17,9 @@ pdfjs.GlobalWorkerOptions.workerSrc = new URL(
   import.meta.url
 ).toString();
 
-/** 200 DPI, so the export can be plotted at size. PDF user space is 72/inch. */
-export const RASTER_DPI = 200;
-
-/**
- * The editor never shows a 7200px sheet whole; the browser shrinks it to fit,
- * and shrinking is what washes the drawing out -- measured at 85% of the ink.
- * This second render is made at the size actually looked at, where a vector
- * renderer keeps a hairline a full pixel wide.
- */
-export const DISPLAY_MAX_WIDTH = 2400;
+// Re-exported so this file still reads as the one place a rasterizer's
+// numbers are stated, while there is only one copy of each.
+export { DISPLAY_MAX_WIDTH, RASTER_DPI };
 
 const IMAGE_TYPES = ["image/png", "image/jpeg"];
 

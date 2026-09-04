@@ -10,6 +10,7 @@
 // in a run of const declarations inside JSX. So that run is lifted out of the
 // file as text, checked to be the one expected, and evaluated.
 import assert from "node:assert/strict";
+import { pointsFromPixels } from "../src/lib/pageSize.ts";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import test from "node:test";
@@ -54,8 +55,14 @@ const SHIM = [
   "};",
 ].join(NL);
 
+// The page as stored, and as printed. The export works in points now; every
+// formula on both sides is width times a factor, so running the editor's block
+// at the printed width gives the printed geometry and the comparison is still
+// between the two renderers rather than between two unit systems.
 const W = 1700;
 const H = 2200;
+const PW = pointsFromPixels(W);
+const PH = pointsFromPixels(H);
 
 /** The editor's note geometry, lifted from the JSX and run. */
 async function editorNoteGeometry(marker: Record<string, unknown>, lib: Record<string, unknown>) {
@@ -91,7 +98,7 @@ async function editorNoteGeometry(marker: Record<string, unknown>, lib: Record<s
     const file = path.join(dir, "block.ts");
     writeFileSync(file, module_, "utf8");
     const { compute } = await import(pathToFileURL(file).href);
-    return compute({ activePage: { width: W, height: H }, m: marker, selectedMarkerId: null, ...lib });
+    return compute({ activePage: { width: PW, height: PH }, m: marker, selectedMarkerId: null, ...lib });
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -105,7 +112,8 @@ async function recordAnExport(marker: Record<string, unknown>) {
   try {
     mkdirSync(path.join(work, "lib"), { recursive: true });
     writeFileSync(path.join(work, "lib", "shim.ts"), SHIM, "utf8");
-    for (const f of ["exportPdf.ts", "markerGeometry.ts", "markerTypes.ts", "types.ts", "money.ts"]) {
+    for (const f of ["exportPdf.ts", "markerGeometry.ts", "markerTypes.ts", "types.ts", "money.ts",
+                     "pageSize.ts"]) {
       let text = readFileSync(path.join(LIB, f), "utf8");
       const before = text;
       text = text.replace(/from "\.\/([A-Za-z0-9_]+)"/g, 'from "./$1.ts"');
@@ -170,7 +178,7 @@ for (const [what, marker] of Object.entries(NOTES)) {
       assert.ok(screen.lines.length > 1, `that note did not wrap: ${JSON.stringify(screen.lines)}`);
     }
 
-    const flip = (y: number) => H - y;
+    const flip = (y: number) => PH - y;
 
     // The box: drawn twice, filled then outlined, and both must be the same rect.
     const boxes = calls.filter((c) => c.fn === "drawRectangle")
@@ -205,7 +213,7 @@ for (const [what, marker] of Object.entries(NOTES)) {
       }, []).join(" ");
     assert.equal(headPoints, screen.arrowPoints, "the arrowhead is a different triangle");
     assert.deepEqual({ x: (head.args[1] as Record<string, number>).x,
-                       y: (head.args[1] as Record<string, number>).y }, { x: 0, y: H });
+                       y: (head.args[1] as Record<string, number>).y }, { x: 0, y: PH });
 
     // Every line of text, including the label, at the same baseline.
     const rows = [marker.label as string, ...screen.lines];
