@@ -32,13 +32,19 @@ function RuneMark() {
 }
 
 // The staff console, for when the desktop app is not to hand: the same actions
-// Waystone's Rune tab offers, behind the same shared key. Everything below the
-// key prompt is client-side, because the key belongs to the person rather than
-// the server -- this page is on a public address.
+// Waystone's Rune tab offers, behind the same team sign-in. Everything below
+// the sign-in is client-side, because the credential belongs to the person
+// rather than the server -- this page is on a public address.
 export default function Home() {
   return (
-    <main className="flex min-h-screen items-center justify-center bg-[#171717] p-6 font-[system-ui,'Segoe_UI',sans-serif] text-[#f2f2f2]">
-      <div className="w-full max-w-md">
+    // Top-aligned rather than centred: a list of projects is not a dialogue
+    // box, and centring one vertically pushes it about as it grows.
+    <main className="flex min-h-screen justify-center bg-[#171717] p-6 font-[system-ui,'Segoe_UI',sans-serif] text-[#f2f2f2]">
+      {/* This was max-w-md -- 448px, phone width -- from when the page was a
+          sign-in box and nothing else. A project table then had to be squeezed
+          into it, which is what made the columns overlap and the name truncate
+          to a letter. Staff use this on a desktop, so it gets the desktop. */}
+      <div className="w-full max-w-6xl">
         <div className="mb-4 flex items-center gap-4">
           <RuneMark />
           <div>

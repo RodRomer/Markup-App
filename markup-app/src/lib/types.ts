@@ -34,6 +34,9 @@ export type PageData = {
 export type ProjectData = {
   id: string;
   name: string;
+  /** The project number this markup is linked to Keap by. Null for everything made
+   *  before the field existed. */
+  projectNumber: string | null;
   shareToken: string;
   status: string;
   allowIE: boolean;
@@ -80,6 +83,7 @@ export function toMarkerData(m: MarkerWithRelations): MarkerData {
 type ProjectWithRelations = {
   id: string;
   name: string;
+  projectNumber: string | null;
   shareToken: string;
   status: string;
   allowIE: boolean;
@@ -121,6 +125,7 @@ export function toProjectData(project: ProjectWithRelations): ProjectData {
 
   return {
     id: project.id,
+    projectNumber: project.projectNumber,
     name: project.name,
     shareToken: project.shareToken,
     status: project.status,

@@ -293,7 +293,10 @@ export default function StaffConsole() {
 
   if (!session) {
     return (
-      <div className={CARD + " p-6"}>
+      // Narrow on purpose: the page is wide for the project table, and a
+      // sign-in stretched across a desktop reads as a form with fields
+      // missing from it.
+      <div className={CARD + " mx-auto max-w-md p-6"}>
         <h2 className="mb-3 text-[11px] font-bold uppercase tracking-[0.9px] text-[#8c8c8c]">
           Sign in
         </h2>
@@ -428,11 +431,11 @@ export default function StaffConsole() {
         </div>
 
         <div className="mt-5 flex flex-wrap items-center gap-2">
-          <label className="text-sm text-[#b2b2b2]" htmlFor="ppm-number">
-            PPM number
+          <label className="text-sm text-[#b2b2b2]" htmlFor="project-number">
+            Project number
           </label>
           <input
-            id="ppm-number"
+            id="project-number"
             value={numberDraft}
             onChange={(e) => setNumberDraft(e.target.value)}
             placeholder="not linked"
@@ -655,7 +658,7 @@ export default function StaffConsole() {
       <div className="overflow-x-auto">
       <div className={ROW_GRID + " px-3 pb-1 text-[10px] uppercase tracking-[0.6px] text-[#6a6a6a]"}>
         <span>Project</span>
-        <span>PPM number</span>
+        <span>Number</span>
         <span>IE views</span>
         <span>Markers</span>
         <span>Updated</span>

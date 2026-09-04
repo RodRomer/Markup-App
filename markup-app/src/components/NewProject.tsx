@@ -131,7 +131,7 @@ export default function NewProject({
   }
 
   return (
-    <div className={CARD + " p-6"}>
+    <div className={CARD + " mx-auto max-w-2xl p-6"}>
       <h2 className="mb-4 text-[11px] font-bold uppercase tracking-[0.9px] text-[#8c8c8c]">
         New project
       </h2>
@@ -153,7 +153,7 @@ export default function NewProject({
         <label className="flex items-center gap-3 text-sm text-[#b2b2b2]">
           <input
             className={FIELD + " w-40"}
-            placeholder="PPM number"
+            placeholder="Project number"
             value={projectNumber}
             disabled={busy}
             onChange={(e) => setProjectNumber(e.target.value)}
