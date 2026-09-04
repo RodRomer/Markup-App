@@ -88,8 +88,8 @@ async function recordAnExport() {
   try {
     mkdirSync(path.join(work, "lib"), { recursive: true });
     writeFileSync(path.join(work, "lib", "shim.ts"), SHIM, "utf8");
-    for (const f of ["exportPdf.ts", "markerGeometry.ts", "markerTypes.ts", "types.ts", "money.ts",
-                     "pageSize.ts"]) {
+    for (const f of ["exportPdf.ts", "embedPageImage.ts", "markerGeometry.ts", "markerTypes.ts",
+                     "types.ts", "money.ts", "pageSize.ts"]) {
       let text = readFileSync(path.join(LIB, f), "utf8");
       const before = text;
       // Node's resolver wants the extension on a relative .ts import; the

@@ -1,6 +1,7 @@
 import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
 import { readFile } from "fs/promises";
 import path from "path";
+import { embedPageImage } from "./embedPageImage";
 import {
   arrowWedgePoints,
   DOT_RADIUS_FACTOR,
@@ -22,10 +23,6 @@ const MAX_CALLOUT_LINES = 6;
 function hexToRgb(hex: string) {
   const n = parseInt(hex.replace("#", ""), 16);
   return rgb(((n >> 16) & 255) / 255, ((n >> 8) & 255) / 255, (n & 255) / 255);
-}
-
-function isJpeg(bytes: Buffer) {
-  return bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff;
 }
 
 function pointsToSvgPath(points: { x: number; y: number }[]) {
@@ -78,13 +75,12 @@ export async function generateProjectPdf(project: ProjectData): Promise<Uint8Arr
       width: pointsFromPixels(storedPage.width),
       height: pointsFromPixels(storedPage.height),
     };
-    const imageBytes = imageBytesByPage[pageIndex];
-    const image = isJpeg(imageBytes)
-      ? await pdfDoc.embedJpg(imageBytes)
-      : await pdfDoc.embedPng(imageBytes);
-
     const pdfPage = pdfDoc.addPage([pageData.width, pageData.height]);
-    pdfPage.drawImage(image, { x: 0, y: 0, width: pageData.width, height: pageData.height });
+    // Before any marker: this appends to the page's content stream like every
+    // draw call below it, so the plan has to go down first or it would cover
+    // them.
+    await embedPageImage(pdfDoc, pdfPage, imageBytesByPage[pageIndex],
+                         { x: 0, y: 0, width: pageData.width, height: pageData.height });
 
     const pageHeight = pageData.height;
     const flipY = (y: number) => pageHeight - y;

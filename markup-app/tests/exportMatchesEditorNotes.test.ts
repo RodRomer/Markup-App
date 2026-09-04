@@ -112,8 +112,8 @@ async function recordAnExport(marker: Record<string, unknown>) {
   try {
     mkdirSync(path.join(work, "lib"), { recursive: true });
     writeFileSync(path.join(work, "lib", "shim.ts"), SHIM, "utf8");
-    for (const f of ["exportPdf.ts", "markerGeometry.ts", "markerTypes.ts", "types.ts", "money.ts",
-                     "pageSize.ts"]) {
+    for (const f of ["exportPdf.ts", "embedPageImage.ts", "markerGeometry.ts", "markerTypes.ts",
+                     "types.ts", "money.ts", "pageSize.ts"]) {
       let text = readFileSync(path.join(LIB, f), "utf8");
       const before = text;
       text = text.replace(/from "\.\/([A-Za-z0-9_]+)"/g, 'from "./$1.ts"');
