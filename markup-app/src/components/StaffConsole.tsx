@@ -70,21 +70,20 @@ function hasUnseenActivity(project: Project, seen: Record<string, string>): bool
 }
 
 /** One grid, used by the header row and every project row, so a long project
- *  name cannot push the columns out of line with the ones above and below it. */
-/** One grid, used by the header row and every project row, so a long project
  *  name cannot push the columns out of line with the ones above and below it.
  *
- *  Two shapes. The five fixed columns came to 23rem plus gaps, which is wider
- *  than the card in a narrow window -- so the name's minmax(0,1fr) collapsed to
- *  nothing and the name drew straight on top of the next column. Narrow shows
- *  the three that answer "which project, has it moved, is it in"; the two
- *  counts appear when there is room for them. */
+ *  It has a minimum width and the list scrolls sideways below it, rather than
+ *  the columns being squeezed. Squeezing was tried twice and failed twice: at
+ *  one width the name's column collapsed to nothing and drew on top of the next
+ *  one, and at another the row overflowed its own background, so the status sat
+ *  outside the card. A breakpoint fixes neither, because sm: watches the
+ *  viewport and the thing that runs out of room is this card.
+ *
+ *  Six columns: what it is called, what Keap calls it, the two counts, when it
+ *  last moved, and where it is. */
 const ROW_GRID =
-  "grid items-baseline gap-3 grid-cols-[minmax(4rem,1fr)_7rem_4rem] " +
-  "sm:grid-cols-[minmax(6rem,1fr)_3.5rem_4rem_7.5rem_4.5rem]";
-
-/** The two columns that are dropped first, being the least load-bearing. */
-const WIDE_ONLY = "hidden sm:block";
+  "grid min-w-[44rem] items-baseline gap-3 " +
+  "grid-cols-[minmax(11rem,1fr)_6rem_4rem_4rem_7.5rem_4.5rem]";
 const dateAndTime = (iso: string) =>
   new Date(iso).toLocaleString(undefined, {
     month: "short", day: "numeric", hour: "numeric", minute: "2-digit",
@@ -128,6 +127,7 @@ export default function StaffConsole() {
   const [copied, setCopied] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
   const [priceDraft, setPriceDraft] = useState("");
+  const [numberDraft, setNumberDraft] = useState("");
   const [creating, setCreating] = useState(false);
   // Most recently touched first, because the reason to open this list is
   // almost always "what has moved".
@@ -280,11 +280,21 @@ export default function StaffConsole() {
           &rsaquo; Connections. Kept for this tab only, and forgotten when you close it.
         </p>
         {error && <p className="mb-3 text-sm text-[#f78645]">{error}</p>}
-        <div className="flex flex-col gap-2">
+        <form
+          className="flex flex-col gap-2"
+          onSubmit={(e) => {
+            e.preventDefault();
+            void signIn();
+          }}
+        >
           <input
             type="text"
-            name="team"
-            autoComplete="organization"
+            name="username"
+            // A password manager stores a pair, and it looks for a username
+            // field to pair with the password. Marked as "organization" it saw
+            // one password and nothing to attach it to, so Keeper could not
+            // keep the two together.
+            autoComplete="username"
             value={nameDraft}
             onChange={(e) => setNameDraft(e.target.value)}
             onKeyDown={(e) => { if (e.key === "Enter") void signIn(); }}
@@ -307,13 +317,13 @@ export default function StaffConsole() {
             className="rounded-lg border border-[#474747] bg-[#1f1f1f] px-3 py-2 text-sm text-[#f2f2f2] placeholder:text-[#6a6a6a]"
           />
           <button
-            onClick={() => void signIn()}
+            type="submit"
             disabled={!nameDraft.trim() || !passwordDraft || busy !== null}
             className={PRIMARY}
           >
             {busy === "sign-in" ? "Signing in…" : "Sign in"}
           </button>
-        </div>
+        </form>
       </div>
     );
   }
@@ -395,7 +405,41 @@ export default function StaffConsole() {
           ))}
         </div>
 
-        <div className="mt-5 flex items-center gap-2">
+        <div className="mt-5 flex flex-wrap items-center gap-2">
+          <label className="text-sm text-[#b2b2b2]" htmlFor="ppm-number">
+            PPM number
+          </label>
+          <input
+            id="ppm-number"
+            value={numberDraft}
+            onChange={(e) => setNumberDraft(e.target.value)}
+            placeholder="not linked"
+            className="w-36 rounded-lg border border-[#474747] bg-[#1f1f1f] px-3 py-2 text-sm text-[#f2f2f2] placeholder:text-[#6a6a6a]"
+          />
+          <button
+            className={BTN}
+            disabled={busy !== null}
+            onClick={() =>
+              void act("number", async () => {
+                // Blank clears it. Unlike the name, having none is a real state
+                // -- every project made before the field existed has none.
+                const res = await call("/api/projects/" + detail.id, {
+                  method: "PATCH",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ projectNumber: numberDraft.trim() || null }),
+                });
+                const saved = await res.json();
+                setNumberDraft(saved.projectNumber ?? "");
+                setDetail({ ...detail, projectNumber: saved.projectNumber });
+                await loadProjects();
+              })
+            }
+          >
+            {busy === "number" ? "Saving…" : "Save"}
+          </button>
+        </div>
+
+        <div className="mt-3 flex flex-wrap items-center gap-2">
           <label className="text-sm text-[#b2b2b2]" htmlFor="price">
             Price per IE
           </label>
@@ -586,10 +630,12 @@ export default function StaffConsole() {
       </div>
 
       {/* Titles, so a column of bare numbers says what it counts. */}
+      <div className="overflow-x-auto">
       <div className={ROW_GRID + " px-3 pb-1 text-[10px] uppercase tracking-[0.6px] text-[#6a6a6a]"}>
         <span>Project</span>
-        <span className={WIDE_ONLY}>IE views</span>
-        <span className={WIDE_ONLY}>Markers</span>
+        <span>PPM number</span>
+        <span>IE views</span>
+        <span>Markers</span>
         <span>Updated</span>
         <span className="text-right">Status</span>
       </div>
@@ -613,6 +659,7 @@ export default function StaffConsole() {
                 const res = await call("/api/projects/" + project.id);
                 const loaded: Detail = await res.json();
                 setPriceDraft(loaded.pricePerIE === null ? "" : String(loaded.pricePerIE));
+                setNumberDraft(loaded.projectNumber ?? "");
                 markSeen(project.id);
                 setSeen(readSeen());
                 setDetail(loaded);
@@ -633,14 +680,15 @@ export default function StaffConsole() {
                   </span>
                 )}
                 <span className="truncate" title={project.name}>{project.name}</span>
-                {project.projectNumber && (
-                  <span className="hidden shrink-0 text-xs text-[#6a6a6a] sm:inline">
-                    #{project.projectNumber}
-                  </span>
-                )}
               </span>
-              <span className={WIDE_ONLY + " text-xs text-[#8c8c8c]"}>{project.ieViewCount ?? 0}</span>
-              <span className={WIDE_ONLY + " text-xs text-[#8c8c8c]"}>{project.markerCount ?? 0}</span>
+              {/* Its own column now. Beside the name it was the thing that
+                  actually overflowed: a number cannot be truncated usefully, so
+                  it refused to shrink and pushed everything after it along. */}
+              <span className="truncate text-xs text-[#8c8c8c]" title={project.projectNumber ?? ""}>
+                {project.projectNumber || "—"}
+              </span>
+              <span className="text-xs text-[#8c8c8c]">{project.ieViewCount ?? 0}</span>
+              <span className="text-xs text-[#8c8c8c]">{project.markerCount ?? 0}</span>
               <span className={"text-xs " + (unseen ? "text-[#f78645]" : "text-[#8c8c8c]")}>
                 {dateAndTime(project.lastActivityAt)}
               </span>
@@ -649,6 +697,7 @@ export default function StaffConsole() {
           </button>
           );
         })}
+      </div>
       </div>
     </div>
   );
