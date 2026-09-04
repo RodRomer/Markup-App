@@ -82,8 +82,8 @@ function hasUnseenActivity(project: Project, seen: Record<string, string>): bool
  *  Six columns: what it is called, what Keap calls it, the two counts, when it
  *  last moved, and where it is. */
 const ROW_GRID =
-  "grid min-w-[44rem] items-baseline gap-3 " +
-  "grid-cols-[minmax(11rem,1fr)_6rem_4rem_4rem_7.5rem_4.5rem]";
+  "grid min-w-[52rem] items-baseline gap-3 " +
+  "grid-cols-[minmax(11rem,1fr)_6rem_4rem_4rem_7.5rem_8rem_4.5rem]";
 const dateAndTime = (iso: string) =>
   new Date(iso).toLocaleString(undefined, {
     month: "short", day: "numeric", hour: "numeric", minute: "2-digit",
@@ -128,6 +128,7 @@ export default function StaffConsole() {
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
   const [priceDraft, setPriceDraft] = useState("");
   const [numberDraft, setNumberDraft] = useState("");
+  const [keap, setKeap] = useState<Record<string, { stage: string; delivered: boolean }>>({});
   const [creating, setCreating] = useState(false);
   // Most recently touched first, because the reason to open this list is
   // almost always "what has moved".
@@ -204,6 +205,27 @@ export default function StaffConsole() {
   useEffect(() => {
     void loadProjects();
   }, [loadProjects]);
+
+  // After the list, and never in front of it. The projects are already on
+  // screen by the time this asks, so a Keap outage costs this one column rather
+  // than the page -- which is how Waystone loads it too, and for the reason.
+  useEffect(() => {
+    if (!session || !projects) return;
+    let current = true;
+    void (async () => {
+      try {
+        const res = await call("/api/keap/stages", { method: "POST" });
+        const body = await res.json();
+        if (current) setKeap(body.stages ?? {});
+      } catch {
+        // Deliberately silent. Nothing here is worth an error banner over a
+        // column the page works perfectly well without.
+      }
+    })();
+    return () => {
+      current = false;
+    };
+  }, [session, projects, call]);
 
   async function act(label: string, run: () => Promise<void>) {
     setBusy(label);
@@ -637,6 +659,7 @@ export default function StaffConsole() {
         <span>IE views</span>
         <span>Markers</span>
         <span>Updated</span>
+        <span>Keap</span>
         <span className="text-right">Status</span>
       </div>
 
@@ -691,6 +714,17 @@ export default function StaffConsole() {
               <span className="text-xs text-[#8c8c8c]">{project.markerCount ?? 0}</span>
               <span className={"text-xs " + (unseen ? "text-[#f78645]" : "text-[#8c8c8c]")}>
                 {dateAndTime(project.lastActivityAt)}
+              </span>
+              {/* Blank covers no key, no number, no match and a shared number
+                  alike -- all of them mean the same thing here, which is that
+                  nothing is known. */}
+              <span
+                className={
+                  "truncate text-xs " +
+                  (keap[project.id]?.delivered ? "text-[#f78645]" : "text-[#8c8c8c]")
+                }
+              >
+                {keap[project.id]?.stage ?? ""}
               </span>
               <span className="text-right text-xs text-[#8c8c8c]">{project.status}</span>
             </div>
