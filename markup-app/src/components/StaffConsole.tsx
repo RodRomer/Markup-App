@@ -71,7 +71,20 @@ function hasUnseenActivity(project: Project, seen: Record<string, string>): bool
 
 /** One grid, used by the header row and every project row, so a long project
  *  name cannot push the columns out of line with the ones above and below it. */
-const ROW_GRID = "grid grid-cols-[minmax(0,1fr)_4.5rem_4.5rem_9rem_5rem] items-baseline gap-3";
+/** One grid, used by the header row and every project row, so a long project
+ *  name cannot push the columns out of line with the ones above and below it.
+ *
+ *  Two shapes. The five fixed columns came to 23rem plus gaps, which is wider
+ *  than the card in a narrow window -- so the name's minmax(0,1fr) collapsed to
+ *  nothing and the name drew straight on top of the next column. Narrow shows
+ *  the three that answer "which project, has it moved, is it in"; the two
+ *  counts appear when there is room for them. */
+const ROW_GRID =
+  "grid items-baseline gap-3 grid-cols-[minmax(4rem,1fr)_7rem_4rem] " +
+  "sm:grid-cols-[minmax(6rem,1fr)_3.5rem_4rem_7.5rem_4.5rem]";
+
+/** The two columns that are dropped first, being the least load-bearing. */
+const WIDE_ONLY = "hidden sm:block";
 const dateAndTime = (iso: string) =>
   new Date(iso).toLocaleString(undefined, {
     month: "short", day: "numeric", hour: "numeric", minute: "2-digit",
@@ -427,9 +440,33 @@ export default function StaffConsole() {
         </div>
 
         <div className="mt-5 flex flex-wrap gap-2">
-          <a href={"/api/projects/" + detail.id + "/pdf"} className={BTN}>
-            Download PDF
-          </a>
+          {/* Fetched rather than linked. A plain <a href> cannot carry the
+              x-team-token header, so the route answered "Not signed in" every
+              time -- and it could not have carried the old staff key either, so
+              this download has never worked from here. */}
+          <button
+            className={BTN}
+            disabled={busy !== null}
+            onClick={() =>
+              void act("pdf", async () => {
+                const res = await call("/api/projects/" + detail.id + "/pdf");
+                const blob = await res.blob();
+                const url = URL.createObjectURL(blob);
+                try {
+                  const link = document.createElement("a");
+                  link.href = url;
+                  link.download = detail.name.replace(/[^a-z0-9\- _]/gi, "_") + ".pdf";
+                  link.click();
+                } finally {
+                  // Released on the next tick: revoking before the browser has
+                  // started the save cancels it.
+                  setTimeout(() => URL.revokeObjectURL(url), 10_000);
+                }
+              })
+            }
+          >
+            {busy === "pdf" ? "Preparing…" : "Download PDF"}
+          </button>
           <button
             className={
               BTN + (confirmDelete === detail.id ? " border-[#f78645] text-[#f78645]" : "")
@@ -551,8 +588,8 @@ export default function StaffConsole() {
       {/* Titles, so a column of bare numbers says what it counts. */}
       <div className={ROW_GRID + " px-3 pb-1 text-[10px] uppercase tracking-[0.6px] text-[#6a6a6a]"}>
         <span>Project</span>
-        <span>IE views</span>
-        <span>Markers</span>
+        <span className={WIDE_ONLY}>IE views</span>
+        <span className={WIDE_ONLY}>Markers</span>
         <span>Updated</span>
         <span className="text-right">Status</span>
       </div>
@@ -597,11 +634,13 @@ export default function StaffConsole() {
                 )}
                 <span className="truncate" title={project.name}>{project.name}</span>
                 {project.projectNumber && (
-                  <span className="shrink-0 text-xs text-[#6a6a6a]">#{project.projectNumber}</span>
+                  <span className="hidden shrink-0 text-xs text-[#6a6a6a] sm:inline">
+                    #{project.projectNumber}
+                  </span>
                 )}
               </span>
-              <span className="text-xs text-[#8c8c8c]">{project.ieViewCount ?? 0}</span>
-              <span className="text-xs text-[#8c8c8c]">{project.markerCount ?? 0}</span>
+              <span className={WIDE_ONLY + " text-xs text-[#8c8c8c]"}>{project.ieViewCount ?? 0}</span>
+              <span className={WIDE_ONLY + " text-xs text-[#8c8c8c]"}>{project.markerCount ?? 0}</span>
               <span className={"text-xs " + (unseen ? "text-[#f78645]" : "text-[#8c8c8c]")}>
                 {dateAndTime(project.lastActivityAt)}
               </span>

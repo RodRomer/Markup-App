@@ -102,3 +102,26 @@ test("signing in is the one route that takes a password", () => {
   assert.match(login, /scrypt\$16384/,
     "login no longer verifies against a dummy hash when the team does not exist");
 });
+
+test("nothing reaches a guarded route through a plain link", () => {
+  // An <a href> cannot carry the x-team-token header, so a link to a guarded
+  // route answers "Not signed in" every time -- and looks like a broken sign-in
+  // rather than a broken link, which is why it went unnoticed. The PDF download
+  // was exactly this, and had never worked from the staff page under either
+  // credential.
+  const components = readdirSync(path.join(REPO, "src/components"))
+    .filter((f) => f.endsWith(".tsx"))
+    .map((f) => path.join(REPO, "src/components", f));
+  assert.ok(components.length >= 2, "could not find the components");
+
+  const linking: string[] = [];
+  for (const file of components) {
+    const source = readFileSync(file, "utf8");
+    // A JSX href pointing at the staff API, however it is spelled.
+    if (/href=\{?["'{][^}]*\/api\/projects\//.test(source)) {
+      linking.push(path.relative(REPO, file));
+    }
+  }
+  assert.deepEqual(linking, [],
+    "these link straight at a guarded route instead of fetching it with a token");
+});
