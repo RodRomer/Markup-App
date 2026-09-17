@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import type { TeamIdentity } from "@/lib/teamAuth";
+import { resolveToolGrants } from "@/lib/resolveToolGrants";
+import type { ToolAccess } from "@/lib/resolveToolGrants";
 
 /**
  * Which Waystone tools a login may use.
@@ -15,32 +17,14 @@ import type { TeamIdentity } from "@/lib/teamAuth";
  * the server then refuses, or worse, hides one it would happily serve.
  */
 
-/** Always available, to everyone. The shell's own screens are not tools you can
- *  be refused: with no Home and no Settings there is no way back in. */
-export const ALWAYS_AVAILABLE = ["home", "settings"] as const;
-
-export type ToolAccess = {
-  /** The tools this login may use, the shell's own screens included. */
-  tools: string[];
-  /** False when nobody has said anything about this team yet, and it therefore
-   *  gets everything. Waystone shows every tool it ships in that case. */
-  configured: boolean;
-};
+export { ALWAYS_AVAILABLE, resolveToolGrants } from "@/lib/resolveToolGrants";
+export type { ToolAccess, ToolGrantRow } from "@/lib/resolveToolGrants";
 
 /**
  * Resolve the grants for one signed-in login.
  *
- * The team's grants first, then the person's on top: an `allowed` row adds a
- * tool their team does not have, and a row with `allowed: false` takes one away
- * that it does. A refusal has to beat the team grant, or the only way to keep
- * one person out of a tool would be to take it from everyone and hand it back
- * one at a time.
- *
- * A team nobody has configured gets everything -- see the note on the model.
- * That is what let this ship without emptying every existing rail on the day it
- * arrived, and it means "configured" has to travel with the answer: an empty
- * list from an unconfigured team means "all of them", and an empty list from a
- * configured one means none.
+ * The query only; the rule itself is resolveToolGrants, which lives on its own
+ * with no imports so it can be called by a test without a database behind it.
  */
 export async function toolsFor(who: TeamIdentity): Promise<ToolAccess> {
   const grants = await prisma.toolGrant.findMany({
@@ -52,18 +36,7 @@ export async function toolsFor(who: TeamIdentity): Promise<ToolAccess> {
     },
     select: { tool: true, teamId: true, memberId: true, allowed: true },
   });
-
-  const teamGrants = grants.filter((g) => g.teamId !== null);
-  if (teamGrants.length === 0) {
-    return { tools: [], configured: false };
-  }
-
-  const allowed = new Set(teamGrants.filter((g) => g.allowed).map((g) => g.tool));
-  for (const grant of grants.filter((g) => g.memberId !== null)) {
-    if (grant.allowed) allowed.add(grant.tool);
-    else allowed.delete(grant.tool);
-  }
-  return { tools: [...ALWAYS_AVAILABLE, ...[...allowed].sort()], configured: true };
+  return resolveToolGrants(grants);
 }
 
 /**
@@ -77,7 +50,8 @@ export async function toolsFor(who: TeamIdentity): Promise<ToolAccess> {
  */
 export async function mayUse(who: TeamIdentity, tool: string): Promise<boolean> {
   const access = await toolsFor(who);
-  return !access.configured || access.tools.includes(tool);
+  if (!access.configured) return !access.refused.includes(tool);
+  return access.tools.includes(tool);
 }
 
 /**
