@@ -25,10 +25,24 @@ import { isDenied, requireTeam } from "@/lib/teamAuth";
 const PROJECT_NUMBER = /^[A-Za-z0-9][A-Za-z0-9 ._-]{0,63}$/;
 
 export async function POST(request: Request) {
+  const body = await request.json().catch(() => null);
+
+  // A wake-up call, answered before anything else and without signing in.
+  //
+  // Vercel puts an idle function to sleep, and the first lookup of the day pays
+  // to start it -- on the one click somebody is watching an empty form for.
+  // Waystone pings this at startup instead, when nobody is waiting.
+  //
+  // Deliberately needs no credential: it does nothing, reads nothing and says
+  // nothing about what exists. Requiring one would mean signing in at every
+  // launch, and a session row for every launch, to run no query at all.
+  if (body?.warm === true) {
+    return NextResponse.json({ warmed: true });
+  }
+
   const who = await requireTeam(request);
   if (isDenied(who)) return who;
 
-  const body = await request.json().catch(() => null);
   const number = typeof body?.number === "string" ? body.number.trim() : "";
   if (!PROJECT_NUMBER.test(number)) {
     return NextResponse.json({ error: "That is not a project number." }, { status: 400 });
