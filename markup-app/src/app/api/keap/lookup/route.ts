@@ -35,20 +35,25 @@ export async function POST(request: Request) {
   }
 
   try {
-    const matches = await searchOpportunities(number);
+    // One call, with the custom fields on it. Fetching the record separately
+    // afterwards was a second slow round trip for something the search will
+    // hand over if asked -- and Keap's search is the slow part from anywhere.
+    const matches = await searchOpportunities(number, { withCustomFields: true });
     // The whole title, exactly: 8704_BA and 8704_LA are different jobs, and
     // Keap's search returns both for either. Oracle has always insisted on an
     // exact title here rather than taking the first result.
     const wanted = number.toLowerCase();
     const match = matches.find(
       (o) => (o.opportunity_title ?? "").trim().toLowerCase() === wanted
-    ) as { id?: number } | undefined;
+    ) as (Record<string, unknown> & { id?: number }) | undefined;
 
     if (!match?.id) {
       return NextResponse.json({ opportunity: null, url: null });
     }
-
-    const opportunity = await getOpportunity(match.id);
+    // Keap has been known to leave custom_fields off a search result; the
+    // separate fetch is the fallback rather than the normal path, so a thin
+    // answer is slower but never wrong.
+    const opportunity = "custom_fields" in match ? match : await getOpportunity(match.id);
     if (!opportunity) {
       return NextResponse.json({ opportunity: null, url: null });
     }

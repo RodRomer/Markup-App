@@ -36,16 +36,24 @@ export class KeapUnavailable extends Error {}
  * had never heard of. Waystone learned that the hard way; this starts where it
  * finished.
  */
-export async function searchOpportunities(term: string): Promise<KeapOpportunity[]> {
+export async function searchOpportunities(
+  term: string,
+  { withCustomFields = false } = {}
+): Promise<KeapOpportunity[]> {
   const key = process.env.KEAP_API_KEY;
   if (!key) throw new KeapUnavailable("No Keap key is configured on the server.");
 
   const url = new URL(`${BASE_URL}/opportunities`);
   url.searchParams.set("search_term", term);
+  // Oracle needs the custom fields, and Keap will put them in the search result
+  // rather than making us fetch the record separately -- one slow call instead
+  // of two. The stage column does not need them and does not ask: it searches
+  // once per project, and the extra payload would be paid every time.
+  if (withCustomFields) url.searchParams.set("optional_properties", "custom_fields");
 
   const response = await fetch(url, {
     headers: { Authorization: `Bearer ${key}` },
-    signal: AbortSignal.timeout(TIMEOUT_MS),
+    signal: AbortSignal.timeout(withCustomFields ? LOOKUP_TIMEOUT_MS : TIMEOUT_MS),
     // Stages change in Keap, not here, and a cached "Delivered" on a project
     // that has been reopened would be worse than no column at all.
     cache: "no-store",
