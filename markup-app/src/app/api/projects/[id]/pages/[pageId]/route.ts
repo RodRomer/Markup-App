@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { deleteFile } from "@/lib/storage";
 import { isDenied, requireTeam } from "@/lib/teamAuth";
+import { requireTool } from "@/lib/toolAccess";
 
 export async function DELETE(
   request: Request,
@@ -9,6 +10,8 @@ export async function DELETE(
 ) {
   const who = await requireTeam(request);
   if (isDenied(who)) return who;
+  const refused = await requireTool(who, "markup");
+  if (refused) return refused;
   const { id, pageId } = await params;
 
   const project = await prisma.project.findFirst({

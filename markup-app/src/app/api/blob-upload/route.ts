@@ -1,6 +1,7 @@
 import { handleUpload, type HandleUploadBody } from "@vercel/blob/client";
 import { NextResponse } from "next/server";
 import { isDenied, requireTeam } from "@/lib/teamAuth";
+import { requireTool } from "@/lib/toolAccess";
 
 /**
  * Hands the browser a short-lived token so it can upload a page straight to
@@ -19,6 +20,8 @@ import { isDenied, requireTeam } from "@/lib/teamAuth";
 export async function POST(request: Request) {
   const who = await requireTeam(request);
   if (isDenied(who)) return who;
+  const refused = await requireTool(who, "markup");
+  if (refused) return refused;
 
   const body = (await request.json()) as HandleUploadBody;
 

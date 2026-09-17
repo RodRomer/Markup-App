@@ -3,6 +3,7 @@ import { prisma } from "@/lib/db";
 import { KeapUnavailable, searchOpportunities } from "@/lib/keap";
 import { findOpportunity, isDelivered, numberFor, stageName } from "@/lib/keapDelivery";
 import { isDenied, requireTeam } from "@/lib/teamAuth";
+import { requireTool } from "@/lib/toolAccess";
 
 /**
  * What Keap says about this team's projects.
@@ -19,6 +20,8 @@ import { isDenied, requireTeam } from "@/lib/teamAuth";
 export async function POST(request: Request) {
   const who = await requireTeam(request);
   if (isDenied(who)) return who;
+  const refused = await requireTool(who, "markup");
+  if (refused) return refused;
 
   if (!process.env.KEAP_API_KEY) {
     // Not an error. A deployment without a Keap key is a working deployment;

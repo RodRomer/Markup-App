@@ -2,10 +2,13 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { deleteFile, saveFile } from "@/lib/storage";
 import { isDenied, requireTeam } from "@/lib/teamAuth";
+import { requireTool } from "@/lib/toolAccess";
 
 export async function GET(request: Request) {
   const who = await requireTeam(request);
   if (isDenied(who)) return who;
+  const refused = await requireTool(who, "markup");
+  if (refused) return refused;
   const projects = await prisma.project.findMany({
     // The scope of this whole surface: a team sees its own work and nothing
     // else. Projects with no team belong to nobody and appear on no list.
@@ -296,6 +299,8 @@ async function handleFormDataBody(request: Request, teamId: string) {
 export async function POST(request: Request) {
   const who = await requireTeam(request);
   if (isDenied(who)) return who;
+  const refused = await requireTool(who, "markup");
+  if (refused) return refused;
   const contentType = request.headers.get("content-type") ?? "";
   if (contentType.includes("application/json")) {
     return handleJsonBody(request, who.teamId);

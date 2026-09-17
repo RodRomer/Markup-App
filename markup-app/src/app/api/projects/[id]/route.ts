@@ -3,6 +3,7 @@ import { prisma } from "@/lib/db";
 import { deleteFile } from "@/lib/storage";
 import { toProjectData } from "@/lib/types";
 import { isDenied, requireTeam } from "@/lib/teamAuth";
+import { requireTool } from "@/lib/toolAccess";
 
 export async function GET(
   request: Request,
@@ -10,6 +11,8 @@ export async function GET(
 ) {
   const who = await requireTeam(request);
   if (isDenied(who)) return who;
+  const refused = await requireTool(who, "markup");
+  if (refused) return refused;
   const { id } = await params;
 
   const project = await prisma.project.findFirst({
@@ -36,6 +39,8 @@ export async function PATCH(
 ) {
   const who = await requireTeam(request);
   if (isDenied(who)) return who;
+  const refused = await requireTool(who, "markup");
+  if (refused) return refused;
   const { id } = await params;
   const body = await request.json();
 
@@ -97,6 +102,8 @@ export async function DELETE(
 ) {
   const who = await requireTeam(request);
   if (isDenied(who)) return who;
+  const refused = await requireTool(who, "markup");
+  if (refused) return refused;
   const { id } = await params;
 
   const project = await prisma.project.findFirst({

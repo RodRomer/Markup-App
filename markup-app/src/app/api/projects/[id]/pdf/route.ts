@@ -3,6 +3,7 @@ import { prisma } from "@/lib/db";
 import { toProjectData } from "@/lib/types";
 import { generateProjectPdf } from "@/lib/exportPdf";
 import { isDenied, requireTeam } from "@/lib/teamAuth";
+import { requireTool } from "@/lib/toolAccess";
 
 export async function GET(
   request: Request,
@@ -10,6 +11,8 @@ export async function GET(
 ) {
   const who = await requireTeam(request);
   if (isDenied(who)) return who;
+  const refused = await requireTool(who, "markup");
+  if (refused) return refused;
   const { id } = await params;
 
   const project = await prisma.project.findFirst({

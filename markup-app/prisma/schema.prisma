@@ -48,6 +48,31 @@ model Project {
   @@index([teamId])
 }
 
+/// Which tools a login may use in Waystone.
+///
+/// A grant belongs to a team or to one person, never both. The team grant is the
+/// normal case; a member row is the exception that gives one person a tool their
+/// team does not have, or takes one away that it does -- `allowed = false` beats
+/// the team's grant.
+///
+/// A team with no grants at all gets everything. That is what lets this ship
+/// without emptying anyone's rail: nothing changes until somebody starts saying
+/// what a team should have, and from then on the list is exactly what they said.
+model ToolGrant {
+  id        String   @id @default(cuid())
+  /// The tool's key as Waystone knows it: cache, lookup, snip, markup.
+  tool      String
+  teamId    String?
+  team      Team?    @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  memberId  String?
+  member    Member?  @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  allowed   Boolean  @default(true)
+  createdAt DateTime @default(now())
+
+  @@unique([teamId, tool])
+  @@unique([memberId, tool])
+}
+
 model Document {
   id               String   @id @default(cuid())
   projectId        String
@@ -121,6 +146,7 @@ model Team {
   projects     Project[]
   sessions     Session[]
   members      Member[]
+  toolGrants   ToolGrant[]
 }
 
 /// One person's sign-in. The team still decides which projects a session can
@@ -140,6 +166,7 @@ model Member {
   disabledAt   DateTime?
   createdAt    DateTime  @default(now())
   sessions     Session[]
+  toolGrants   ToolGrant[]
 
   @@index([teamId])
 }

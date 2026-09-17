@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getOpportunity, KeapUnavailable, opportunityUrl, searchOpportunities } from "@/lib/keap";
 import { isDenied, requireTeam } from "@/lib/teamAuth";
+import { requireTool } from "@/lib/toolAccess";
 
 /**
  * Look one project up in Keap, for Oracle.
@@ -42,6 +43,8 @@ export async function POST(request: Request) {
 
   const who = await requireTeam(request);
   if (isDenied(who)) return who;
+  const refused = await requireTool(who, "lookup");
+  if (refused) return refused;
 
   const number = typeof body?.number === "string" ? body.number.trim() : "";
   if (!PROJECT_NUMBER.test(number)) {

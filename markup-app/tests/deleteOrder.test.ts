@@ -33,6 +33,9 @@ const STUB = [
   "const NextResponse = { json: (body, init) => ({ body, status: init?.status ?? 200 }) };",
   "const requireTeam = async () => ({ teamId: 'team_1', teamName: 'Test' });",
   "const isDenied = () => false;",
+  // Always allows: what these tests are about is what happens after the
+  // route decides to act. Refusing is tests/toolAccess.test.ts.
+  "const requireTool = async () => null;",
   "const deleteFile = async (key) => { events.push('image: ' + key); };",
   "const toProjectData = (p) => p;",
   "const generateProjectPdf = async () => new Uint8Array();",
