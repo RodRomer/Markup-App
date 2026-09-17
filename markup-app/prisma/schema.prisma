@@ -120,6 +120,28 @@ model Team {
   createdAt    DateTime  @default(now())
   projects     Project[]
   sessions     Session[]
+  members      Member[]
+}
+
+/// One person's sign-in. The team still decides which projects a session can
+/// see; this is who opened it, so someone can be refused access on their own
+/// rather than by changing a password everybody shares.
+model Member {
+  id           String    @id @default(cuid())
+  teamId       String
+  team         Team      @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  /// Unique across the app, not per team: signing in takes a name and a
+  /// password and nothing else, so two people cannot answer to one name.
+  name         String    @unique
+  /// scrypt, salted per person. Never the password itself, and never returned.
+  passwordHash String
+  /// Set rather than deleted, so a record of who did what outlives the person
+  /// leaving. Their sessions go at the same time.
+  disabledAt   DateTime?
+  createdAt    DateTime  @default(now())
+  sessions     Session[]
+
+  @@index([teamId])
 }
 
 /// A logged-in browser or Waystone install. Stored rather than signed so that
@@ -129,8 +151,13 @@ model Session {
   token     String   @id
   teamId    String
   team      Team     @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  /// Who signed in, when they used their own login. Null for a session opened
+  /// with the shared team password, which still works until everyone has one.
+  memberId  String?
+  member    Member?  @relation(fields: [memberId], references: [id], onDelete: Cascade)
   expiresAt DateTime
   createdAt DateTime @default(now())
 
   @@index([teamId])
+  @@index([memberId])
 }

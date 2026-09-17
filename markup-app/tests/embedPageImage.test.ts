@@ -111,7 +111,7 @@ test("an ordinary RGB page goes through untouched, bytes and all", async () => {
 test("the header tells the reader how to walk the rows it was handed", async () => {
   const { doc, page } = await embed(makePng({ width: 7, height: 5 }));
   const dict = imageStream(doc, page).dict;
-  const parms = dict.lookup(PDFName.of("DecodeParms")) as { lookup(n: PDFName): unknown };
+  const parms = dict.lookup(PDFName.of("DecodeParms")) as unknown as { lookup(n: PDFName): unknown };
 
   assert.equal(numberAt(dict, "Width"), 7);
   assert.equal(numberAt(dict, "Height"), 5);
@@ -131,7 +131,7 @@ test("a greyscale page is passed through as grey, not as three channels", async 
   assert.equal(route, "passthrough");
   const dict = imageStream(doc, page).dict;
   assert.equal(String(dict.lookup(PDFName.of("ColorSpace"))), "/DeviceGray");
-  const parms = dict.lookup(PDFName.of("DecodeParms")) as { lookup(n: PDFName): unknown };
+  const parms = dict.lookup(PDFName.of("DecodeParms")) as unknown as { lookup(n: PDFName): unknown };
   assert.equal(numberAt(parms, "Colors"), 1);
 });
 

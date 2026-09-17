@@ -21,7 +21,14 @@ export { PASSWORD_MIN_LENGTH, hashPassword, newSessionToken, sessionExpiry, veri
 
 const HEADER = "x-team-token";
 
-export type TeamIdentity = { teamId: string; teamName: string };
+export type TeamIdentity = {
+  teamId: string;
+  teamName: string;
+  /** Who signed in, when they used their own login rather than the shared
+   *  team password. Null means the team password, which still works. */
+  memberId: string | null;
+  memberName: string | null;
+};
 
 /**
  * The team behind this request, or the response to send instead.
@@ -38,10 +45,20 @@ export async function requireTeam(request: Request): Promise<TeamIdentity | Next
 
   const session = await prisma.session.findUnique({
     where: { token },
-    include: { team: { select: { id: true, name: true } } },
+    include: {
+      team: { select: { id: true, name: true } },
+      member: { select: { id: true, name: true, disabledAt: true } },
+    },
   });
 
   if (!session) {
+    return NextResponse.json({ error: "Not signed in" }, { status: 401 });
+  }
+  if (session.member?.disabledAt) {
+    // Disabling removes their sessions, so this is the gap between the two: a
+    // request already in flight, or a session created in the same moment. The
+    // token goes with it rather than being left to expire on its own.
+    await prisma.session.delete({ where: { token } }).catch(() => {});
     return NextResponse.json({ error: "Not signed in" }, { status: 401 });
   }
   if (session.expiresAt <= new Date()) {
@@ -52,7 +69,12 @@ export async function requireTeam(request: Request): Promise<TeamIdentity | Next
     return NextResponse.json({ error: "Your sign-in has expired" }, { status: 401 });
   }
 
-  return { teamId: session.team.id, teamName: session.team.name };
+  return {
+    teamId: session.team.id,
+    teamName: session.team.name,
+    memberId: session.member?.id ?? null,
+    memberName: session.member?.name ?? null,
+  };
 }
 
 /** Narrowing helper, so routes read as `if (isDenied(who)) return who;`. */
