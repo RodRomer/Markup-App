@@ -188,3 +188,76 @@ model Session {
   @@index([teamId])
   @@index([memberId])
 }
+
+// --- Warden: the overage check -------------------------------------------------
+//
+// Warden is the restricted admin tool in Waystone, and the overage check is its
+// first job. The check runs here, where the Keap key is; Warden is where an admin
+// reviews what it found and sends the emails from their own Outlook.
+
+/// One run of the overage check, kept so Warden can show when it last ran and
+/// what it saw -- and whether it failed, which is not the same as finding nothing.
+model OverageRun {
+  id         String   @id @default(cuid())
+  ranAt      DateTime @default(now())
+  /// "cron" for the weekday morning run, "manual" for Run now in Warden.
+  trigger    String
+  /// Who pressed Run now. Null for the scheduled run.
+  byMemberId String?
+  ok         Boolean
+  error      String?
+  /// Every CAD Live project and its status -- the prototype's CSV, as rows.
+  report     Json?
+
+  @@index([ranAt])
+}
+
+/// One problem with one project: its SF missing, or over the overage threshold.
+///
+/// One row per project per kind, ever. That is what makes "once only" -- the
+/// rule settled with the user -- hold across runs: once `sentAt` is set, no run
+/// clears it and Warden never offers the alert again.
+model OverageAlert {
+  id             String    @id @default(cuid())
+  /// Keap's opportunity id, which outlives any rename of the project.
+  oppId          Int
+  kind           String
+  /// What the email is written from, as of the last run that saw the problem.
+  projectNumber  String
+  drafter        String
+  pmEmail        String
+  overage        Int?
+  sfEst          Int?
+  notesSf        Int?
+  threshold      Int?
+  businessDays   Int?
+  firstSeenAt    DateTime
+  lastSeenAt     DateTime
+  /// Set when a run stops seeing the problem; cleared if it comes back.
+  resolvedAt     DateTime?
+  /// Set when an admin claims it to send. Claimed, not confirmed: a claim that
+  /// Outlook then fails is released, but a crash between the two loses an
+  /// email rather than sending one twice.
+  sentAt         DateTime?
+  /// Kept as ids rather than relations: people are disabled, not deleted, and
+  /// a record of who sent what should never cascade away with anybody.
+  sentByMemberId String?
+  sentTo         String?
+
+  @@unique([oppId, kind])
+  @@index([sentAt, resolvedAt])
+}
+
+/// Where a drafter's email goes. Keap's Drafter Name field holds names only, so
+/// admins keep this list in Warden.
+model DrafterEmail {
+  id                String   @id @default(cuid())
+  /// The name as matched: trimmed, single-spaced, lower case (drafterKey in
+  /// src/lib/overage/compose.ts), so "Jane Smith " and "jane smith" are one.
+  key               String   @unique
+  /// The name as it was typed, for showing.
+  name              String
+  email             String
+  updatedAt         DateTime @updatedAt
+  updatedByMemberId String?
+}

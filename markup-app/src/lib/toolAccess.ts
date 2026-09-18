@@ -39,6 +39,11 @@ export async function toolsFor(who: TeamIdentity): Promise<ToolAccess> {
   return resolveToolGrants(grants);
 }
 
+/** Waystone's names for the tools, for messages a person reads. */
+const TOOL_NAMES: Record<string, string> = {
+  cache: "Vault", lookup: "Oracle", snip: "Mirror", markup: "Rune", admin: "Warden",
+};
+
 /**
  * Whether this login may use one tool, for the routes that do its work.
  *
@@ -68,7 +73,7 @@ export async function mayUse(who: TeamIdentity, tool: string): Promise<boolean> 
 export async function requireTool(who: TeamIdentity, tool: string): Promise<NextResponse | null> {
   if (await mayUse(who, tool)) return null;
   return NextResponse.json(
-    { error: `Your login does not have ${tool === "markup" ? "Rune" : tool}.` },
+    { error: `Your login does not have ${TOOL_NAMES[tool] ?? tool}.` },
     { status: 403 }
   );
 }

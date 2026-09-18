@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { timingSafeEqual } from "@/lib/timingSafe";
 
 /**
  * Guards the /api/projects/* routes, which are the staff surface: they can list
@@ -14,16 +15,6 @@ import { NextResponse } from "next/server";
  * open in the first place.
  */
 const HEADER = "x-waystone-key";
-
-function timingSafeEqual(a: string, b: string): boolean {
-  // Compare over a fixed length so the loop count never depends on the input.
-  const len = Math.max(a.length, b.length);
-  let diff = a.length ^ b.length;
-  for (let i = 0; i < len; i++) {
-    diff |= (a.charCodeAt(i) || 0) ^ (b.charCodeAt(i) || 0);
-  }
-  return diff === 0;
-}
 
 /** Returns a 401/503 response when the caller isn't authorised, or null to continue. */
 export function requireStaff(request: Request): NextResponse | null {
