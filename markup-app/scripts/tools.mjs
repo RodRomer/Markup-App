@@ -10,8 +10,14 @@
  *   npm run tools -- clear rodney lookup --person    # drop the rule entirely
  *
  * The tools are Waystone's own keys: cache (Vault), lookup (Oracle),
- * snip (Mirror), markup (Rune). Home and Settings are always available and
- * cannot be granted or taken away.
+ * snip (Mirror), markup (Rune), admin (Warden). Home and Settings are always
+ * available and cannot be granted or taken away.
+ *
+ * **admin is restricted: nobody has it until it is granted**, whatever their
+ * team's configuration, and granting it never configures a team. Give it to
+ * people, not teams:
+ *
+ *   npm run tools -- grant rodney admin --person
  *
  * **A team with no rules at all gets everything.** The first grant is therefore
  * the moment a team stops seeing every tool and starts seeing only what it has

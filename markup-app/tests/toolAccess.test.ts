@@ -107,6 +107,59 @@ test("a refusal cannot lock somebody out of Home or Settings", () => {
   assert.ok(configured.tools.includes("settings"));
 });
 
+// --- restricted tools: never given by default ---
+
+test("a team nobody has configured does not get a restricted tool", () => {
+  // Everything else is open until a team is configured. Warden is the
+  // opposite: an admin tool appearing for a whole company on the day it ships
+  // is precisely what "restricted" exists to prevent.
+  const access = resolveToolGrants([]);
+  assert.equal(access.configured, false);
+  assert.equal(access.tools.includes("admin"), false);
+});
+
+test("a person given a restricted tool has it, and their team stays unconfigured", () => {
+  const access = resolveToolGrants([person("admin")]);
+  assert.deepEqual(access.tools, ["admin"]);
+  assert.equal(access.configured, false, "one admin grant must not narrow everyone else's rail");
+});
+
+test("granting a team a restricted tool does not configure the team", () => {
+  // The dangerous case. If this made PPM "configured", PPM would be configured
+  // with nothing but Warden, and every other tool would vanish from everyone.
+  const access = resolveToolGrants([team("admin")]);
+  assert.equal(access.configured, false);
+  assert.deepEqual(access.tools, ["admin"]);
+  assert.deepEqual(access.refused, []);
+});
+
+test("a configured team's restricted tool is still only there if it was given", () => {
+  const without = resolveToolGrants([team("cache"), team("markup")]);
+  assert.equal(without.tools.includes("admin"), false);
+  const withIt = resolveToolGrants([team("cache"), person("admin")]);
+  assert.ok(withIt.tools.includes("admin"));
+  assert.ok(withIt.tools.includes("cache"));
+});
+
+test("a person's refusal of a restricted tool beats their team's grant", () => {
+  const access = resolveToolGrants([team("admin"), person("admin", false)]);
+  assert.equal(access.tools.includes("admin"), false);
+});
+
+test("refusing a restricted tool is not reported as refusing an open one", () => {
+  // `refused` means "everything except these" for an unconfigured team; a
+  // restricted tool was never in "everything" to begin with.
+  const access = resolveToolGrants([person("admin", false)]);
+  assert.deepEqual(access.refused, []);
+});
+
+test("the routes check restricted tools before asking whether the team is configured", () => {
+  // Otherwise an unconfigured team -- which may use anything it has not been
+  // refused -- would be let into a restricted tool it was never given.
+  const may = ACCESS.slice(ACCESS.indexOf("export async function mayUse"));
+  assert.ok(may.indexOf("isRestricted(tool)") < may.indexOf("!access.configured"));
+});
+
 test("a configured team never carries refusals -- it already says what it has", () => {
   const access = resolveToolGrants([team("cache"), person("markup", false)]);
   assert.deepEqual(access.refused, []);

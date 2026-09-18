@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import type { TeamIdentity } from "@/lib/teamAuth";
-import { resolveToolGrants } from "@/lib/resolveToolGrants";
+import { isRestricted, resolveToolGrants } from "@/lib/resolveToolGrants";
 import type { ToolAccess } from "@/lib/resolveToolGrants";
 
 /**
@@ -17,7 +17,7 @@ import type { ToolAccess } from "@/lib/resolveToolGrants";
  * the server then refuses, or worse, hides one it would happily serve.
  */
 
-export { ALWAYS_AVAILABLE, resolveToolGrants } from "@/lib/resolveToolGrants";
+export { ALWAYS_AVAILABLE, RESTRICTED, resolveToolGrants } from "@/lib/resolveToolGrants";
 export type { ToolAccess, ToolGrantRow } from "@/lib/resolveToolGrants";
 
 /**
@@ -50,6 +50,9 @@ export async function toolsFor(who: TeamIdentity): Promise<ToolAccess> {
  */
 export async function mayUse(who: TeamIdentity, tool: string): Promise<boolean> {
   const access = await toolsFor(who);
+  // Checked first: whether the team is configured says nothing about a
+  // restricted tool, which is only ever had by being given.
+  if (isRestricted(tool)) return access.tools.includes(tool);
   if (!access.configured) return !access.refused.includes(tool);
   return access.tools.includes(tool);
 }
